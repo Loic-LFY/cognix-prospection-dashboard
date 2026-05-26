@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  dashboard:
+    build: .
+    container_name: cognix-dashboard
+    ports:
+      - '3000:3000'
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=/data/leads.db
+      - API_KEY=${API_KEY:-}
+      - PORT=3000
+    volumes:
+      # Mount the SQLite DB directory
+      - ${DB_HOST_PATH:-/home/node/.openclaw/workspace/state/cognix}:/data:rw
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:3000/api/control/status']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
