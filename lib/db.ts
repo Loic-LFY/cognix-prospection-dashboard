@@ -1,5 +1,4 @@
 import Database from 'better-sqlite3';
-import path from 'path';
 import type { Lead, Control, LeadFilters } from '@/types/lead';
 
 const DB_PATH =
@@ -41,6 +40,8 @@ function initDb(db: Database.Database) {
       crm_exists INTEGER,
       linkedin_url TEXT,
       linkedin_found INTEGER DEFAULT 0,
+      linkedin_connected INTEGER DEFAULT 0,
+      linkedin_message_sent INTEGER DEFAULT 0,
       linkedin_status TEXT DEFAULT 'pending',
       connection_sent_at TEXT,
       connection_accepted_at TEXT,
@@ -83,11 +84,14 @@ function initDb(db: Database.Database) {
       pause_reason TEXT,
       paused_at TEXT,
       resume_at TEXT,
+      last_run TEXT,
+      next_run TEXT,
+      daily_actions INTEGER DEFAULT 0,
       updated_at TEXT DEFAULT (datetime('now'))
     );
 
-    INSERT OR IGNORE INTO control (id, status, mode, updated_at)
-    VALUES (1, 'active', 'simulation', datetime('now'));
+    INSERT OR IGNORE INTO control (id, status, mode, daily_actions, updated_at)
+    VALUES (1, 'active', 'simulation', 0, datetime('now'));
   `);
 }
 
@@ -166,13 +170,13 @@ export function createLead(data: Partial<Lead>): Lead {
     `INSERT INTO leads (
       id, date_received, company, siret, score, sector, location, size,
       contact_name, contact_title, phone, email, current_host, angle,
-      status, temperature, linkedin_url, linkedin_found, linkedin_status,
-      notes, created_at, updated_at
+      status, temperature, linkedin_url, linkedin_found, linkedin_connected,
+      linkedin_message_sent, linkedin_status, notes, created_at, updated_at
     ) VALUES (
       :id, :date_received, :company, :siret, :score, :sector, :location, :size,
       :contact_name, :contact_title, :phone, :email, :current_host, :angle,
-      :status, :temperature, :linkedin_url, :linkedin_found, :linkedin_status,
-      :notes, datetime('now'), datetime('now')
+      :status, :temperature, :linkedin_url, :linkedin_found, :linkedin_connected,
+      :linkedin_message_sent, :linkedin_status, :notes, datetime('now'), datetime('now')
     )`
   ).run({
     id,
@@ -193,6 +197,8 @@ export function createLead(data: Partial<Lead>): Lead {
     temperature: data.temperature ?? 'new',
     linkedin_url: data.linkedin_url ?? null,
     linkedin_found: data.linkedin_found ?? 0,
+    linkedin_connected: data.linkedin_connected ?? 0,
+    linkedin_message_sent: data.linkedin_message_sent ?? 0,
     linkedin_status: data.linkedin_status ?? 'pending',
     notes: data.notes ?? null,
   });
@@ -205,9 +211,10 @@ export function updateLead(id: string, data: Partial<Lead>): Lead | undefined {
     'company', 'siret', 'score', 'sector', 'location', 'size',
     'contact_name', 'contact_title', 'phone', 'email', 'current_host',
     'angle', 'status', 'temperature', 'linkedin_url', 'linkedin_found',
-    'linkedin_status', 'connection_sent_at', 'connection_accepted_at',
-    'linkedin_message_sent_at', 'sequence_step', 'last_action_date',
-    'calendly_sent', 'recap_generated', 'notes', 'crm_checked', 'crm_exists',
+    'linkedin_connected', 'linkedin_message_sent', 'linkedin_status',
+    'connection_sent_at', 'connection_accepted_at', 'linkedin_message_sent_at',
+    'sequence_step', 'last_action_date', 'calendly_sent', 'recap_generated',
+    'notes', 'crm_checked', 'crm_exists',
   ];
   const sets: string[] = [];
   const params: Record<string, unknown> = {};
@@ -249,7 +256,7 @@ export function getStats() {
 
   const connections_accepted = (
     db
-      .prepare("SELECT COUNT(*) as c FROM leads WHERE connection_accepted_at IS NOT NULL")
+      .prepare('SELECT COUNT(*) as c FROM leads WHERE linkedin_connected = 1')
       .get() as { c: number }
   ).c;
 
@@ -328,6 +335,33 @@ export function resumeControl(): Control {
   getDb()
     .prepare(
       `UPDATE control SET status = 'active', pause_reason = NULL, paused_at = NULL, resume_at = NULL, updated_at = datetime('now') WHERE id = 1`
+    )
+    .run();
+  return getControl();
+}
+
+export function updateControlRun(nextRun?: string): Control {
+  getDb()
+    .prepare(
+      `UPDATE control SET last_run = datetime('now'), next_run = :next_run, updated_at = datetime('now') WHERE id = 1`
+    )
+    .run({ next_run: nextRun ?? null });
+  return getControl();
+}
+
+export function incrementDailyActions(count = 1): Control {
+  getDb()
+    .prepare(
+      `UPDATE control SET daily_actions = daily_actions + :count, updated_at = datetime('now') WHERE id = 1`
+    )
+    .run({ count });
+  return getControl();
+}
+
+export function resetDailyActions(): Control {
+  getDb()
+    .prepare(
+      `UPDATE control SET daily_actions = 0, updated_at = datetime('now') WHERE id = 1`
     )
     .run();
   return getControl();
