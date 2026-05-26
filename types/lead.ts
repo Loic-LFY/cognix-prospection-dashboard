@@ -19,6 +19,8 @@ export interface Lead {
   crm_exists: number | null;
   linkedin_url: string | null;
   linkedin_found: number;
+  linkedin_connected: number;
+  linkedin_message_sent: number;
   linkedin_status: LinkedInStatus;
   connection_sent_at: string | null;
   connection_accepted_at: string | null;
@@ -62,6 +64,9 @@ export interface Control {
   pause_reason: string | null;
   paused_at: string | null;
   resume_at: string | null;
+  last_run: string | null;
+  next_run: string | null;
+  daily_actions: number;
   updated_at: string;
 }
 
