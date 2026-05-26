@@ -13,18 +13,82 @@ export function getDb(): Database.Database {
     _db = new Database(DB_PATH, { readonly: false });
     _db.pragma('journal_mode = WAL');
     _db.pragma('foreign_keys = ON');
-    ensureControlRow(_db);
+    initDb(_db);
   }
   return _db;
 }
 
-function ensureControlRow(db: Database.Database) {
-  const row = db.prepare('SELECT id FROM control WHERE id = 1').get();
-  if (!row) {
-    db.prepare(
-      `INSERT INTO control (id, status, mode, updated_at) VALUES (1, 'active', 'simulation', datetime('now'))`
-    ).run();
-  }
+function initDb(db: Database.Database) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS leads (
+      id TEXT PRIMARY KEY,
+      date_received TEXT,
+      company TEXT,
+      siret TEXT,
+      score INTEGER,
+      sector TEXT,
+      location TEXT,
+      size TEXT,
+      contact_name TEXT,
+      contact_title TEXT,
+      phone TEXT,
+      email TEXT,
+      current_host TEXT,
+      angle TEXT,
+      status TEXT DEFAULT 'new',
+      temperature TEXT DEFAULT 'new',
+      crm_checked INTEGER DEFAULT 0,
+      crm_exists INTEGER,
+      linkedin_url TEXT,
+      linkedin_found INTEGER DEFAULT 0,
+      linkedin_status TEXT DEFAULT 'pending',
+      connection_sent_at TEXT,
+      connection_accepted_at TEXT,
+      linkedin_message_sent_at TEXT,
+      sequence_step INTEGER DEFAULT 0,
+      last_action_date TEXT,
+      calendly_sent INTEGER DEFAULT 0,
+      recap_generated INTEGER DEFAULT 0,
+      notes TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS sequences (
+      id TEXT PRIMARY KEY,
+      lead_id TEXT REFERENCES leads(id),
+      step INTEGER,
+      type TEXT,
+      direction TEXT,
+      subject TEXT,
+      body TEXT,
+      sent_at TEXT,
+      mode TEXT DEFAULT 'simulation',
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS ban_list (
+      id TEXT PRIMARY KEY,
+      lead_id TEXT REFERENCES leads(id),
+      reason TEXT,
+      banned_at TEXT,
+      unban_at TEXT,
+      recontact_approved INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS control (
+      id INTEGER PRIMARY KEY,
+      status TEXT DEFAULT 'active',
+      mode TEXT DEFAULT 'simulation',
+      pause_reason TEXT,
+      paused_at TEXT,
+      resume_at TEXT,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    INSERT OR IGNORE INTO control (id, status, mode, updated_at)
+    VALUES (1, 'active', 'simulation', datetime('now'));
+  `);
 }
 
 // ─── Leads ───────────────────────────────────────────────────────────────────
@@ -224,7 +288,6 @@ export function getStats() {
     )
     .all() as { date: string; count: number }[];
 
-  // Fill in missing days
   const daily: { date: string; count: number }[] = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
