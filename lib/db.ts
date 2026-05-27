@@ -46,6 +46,10 @@ function initDb(db: Database.Database) {
       connection_sent_at TEXT,
       connection_accepted_at TEXT,
       linkedin_message_sent_at TEXT,
+      linkedin_conv_step INTEGER DEFAULT 0,
+      linkedin_engagement TEXT DEFAULT 'none',
+      linkedin_last_reply_at TEXT,
+      linkedin_rdv_proposed INTEGER DEFAULT 0,
       sequence_step INTEGER DEFAULT 0,
       last_action_date TEXT,
       calendly_sent INTEGER DEFAULT 0,
@@ -93,6 +97,17 @@ function initDb(db: Database.Database) {
     INSERT OR IGNORE INTO control (id, status, mode, daily_actions, updated_at)
     VALUES (1, 'active', 'simulation', 0, datetime('now'));
   `);
+
+  // Migrations: add new columns to existing tables without breaking them
+  const migrations = [
+    "ALTER TABLE leads ADD COLUMN linkedin_conv_step INTEGER DEFAULT 0",
+    "ALTER TABLE leads ADD COLUMN linkedin_engagement TEXT DEFAULT 'none'",
+    "ALTER TABLE leads ADD COLUMN linkedin_last_reply_at TEXT",
+    "ALTER TABLE leads ADD COLUMN linkedin_rdv_proposed INTEGER DEFAULT 0",
+  ];
+  for (const sql of migrations) {
+    try { db.exec(sql); } catch { /* column already exists */ }
+  }
 }
 
 // ─── Leads ───────────────────────────────────────────────────────────────────
@@ -171,12 +186,16 @@ export function createLead(data: Partial<Lead>): Lead {
       id, date_received, company, siret, score, sector, location, size,
       contact_name, contact_title, phone, email, current_host, angle,
       status, temperature, linkedin_url, linkedin_found, linkedin_connected,
-      linkedin_message_sent, linkedin_status, notes, created_at, updated_at
+      linkedin_message_sent, linkedin_status,
+      linkedin_conv_step, linkedin_engagement, linkedin_rdv_proposed,
+      notes, created_at, updated_at
     ) VALUES (
       :id, :date_received, :company, :siret, :score, :sector, :location, :size,
       :contact_name, :contact_title, :phone, :email, :current_host, :angle,
       :status, :temperature, :linkedin_url, :linkedin_found, :linkedin_connected,
-      :linkedin_message_sent, :linkedin_status, :notes, datetime('now'), datetime('now')
+      :linkedin_message_sent, :linkedin_status,
+      :linkedin_conv_step, :linkedin_engagement, :linkedin_rdv_proposed,
+      :notes, datetime('now'), datetime('now')
     )`
   ).run({
     id,
@@ -200,6 +219,9 @@ export function createLead(data: Partial<Lead>): Lead {
     linkedin_connected: data.linkedin_connected ?? 0,
     linkedin_message_sent: data.linkedin_message_sent ?? 0,
     linkedin_status: data.linkedin_status ?? 'pending',
+    linkedin_conv_step: data.linkedin_conv_step ?? 0,
+    linkedin_engagement: data.linkedin_engagement ?? 'none',
+    linkedin_rdv_proposed: data.linkedin_rdv_proposed ?? 0,
     notes: data.notes ?? null,
   });
   return getLeadById(id)!;
@@ -213,6 +235,8 @@ export function updateLead(id: string, data: Partial<Lead>): Lead | undefined {
     'angle', 'status', 'temperature', 'linkedin_url', 'linkedin_found',
     'linkedin_connected', 'linkedin_message_sent', 'linkedin_status',
     'connection_sent_at', 'connection_accepted_at', 'linkedin_message_sent_at',
+    'linkedin_conv_step', 'linkedin_engagement', 'linkedin_last_reply_at',
+    'linkedin_rdv_proposed',
     'sequence_step', 'last_action_date', 'calendly_sent', 'recap_generated',
     'notes', 'crm_checked', 'crm_exists',
   ];
@@ -268,12 +292,17 @@ export function getStats() {
     db.prepare('SELECT COUNT(*) as c FROM ban_list').get() as { c: number }
   ).c;
 
+  // LinkedIn engagement breakdown
+  const linkedin_engaged = (
+    db.prepare("SELECT COUNT(*) as c FROM leads WHERE linkedin_engagement IN ('replied', 'warm', 'rdv_proposed')").get() as { c: number }
+  ).c;
+
   const funnelStatuses = [
     { name: 'Nouveaux', status: 'new' },
-    { name: 'LinkedIn en attente', status: 'linkedin_pending' },
     { name: 'Connexion envoyée', status: 'connection_sent' },
     { name: 'Connecté', status: 'connected' },
-    { name: 'Message envoyé', status: 'message_sent' },
+    { name: 'En conversation', status: 'in_conversation' },
+    { name: 'RDV proposé', status: 'rdv_proposed' },
     { name: 'Chaud 🔥', status: 'chaud' },
   ];
 
@@ -311,6 +340,7 @@ export function getStats() {
     connections_accepted,
     leads_chauds,
     ban_count,
+    linkedin_engaged,
     funnel,
     daily,
   };
