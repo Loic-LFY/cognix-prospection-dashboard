@@ -42,20 +42,20 @@ export default function Header() {
   return (
     <header className="sticky top-0 z-50 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 shadow-sm">
       <div className="max-w-screen-xl mx-auto px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
-        {/* Left: title */}
+        {/* Left: logo Cognix */}
         <div className="flex items-center gap-3">
-          <span className="text-2xl">📡</span>
-          <div>
-            <h1 className="text-lg font-bold text-gray-900 dark:text-white leading-tight">
-              Cognix Prospection
-            </h1>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Dashboard de suivi</p>
-          </div>
+          <img
+            src="/logo-cognix.png"
+            alt="Cognix Systems"
+            className="h-10 w-auto object-contain"
+          />
+          <span className="text-xs text-gray-500 dark:text-gray-400 font-medium border-l border-gray-200 dark:border-gray-600 pl-3">
+            Dashboard Prospection
+          </span>
         </div>
 
         {/* Right: badges + controls */}
         <div className="flex items-center gap-3 flex-wrap">
-          {/* Mode badge */}
           {control && (
             <span
               className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${
@@ -68,7 +68,6 @@ export default function Header() {
             </span>
           )}
 
-          {/* Status badge */}
           {control && (
             <span
               className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold ${
@@ -88,7 +87,6 @@ export default function Header() {
             </span>
           )}
 
-          {/* Stop button */}
           {control?.status === 'active' && (
             <button
               onClick={handleStop}
@@ -99,7 +97,6 @@ export default function Header() {
             </button>
           )}
 
-          {/* Resume button */}
           {control?.status === 'paused' && (
             <button
               onClick={handleResume}
@@ -110,7 +107,6 @@ export default function Header() {
             </button>
           )}
 
-          {/* Refresh */}
           <button
             onClick={fetchStatus}
             className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition"
@@ -121,7 +117,6 @@ export default function Header() {
         </div>
       </div>
 
-      {/* Pause reason bar */}
       {control?.status === 'paused' && control.pause_reason && (
         <div className="bg-red-50 dark:bg-red-950 border-t border-red-200 dark:border-red-800 px-4 py-1.5 text-xs text-red-700 dark:text-red-300">
           ⚠️ Raison de la pause : {control.pause_reason}
