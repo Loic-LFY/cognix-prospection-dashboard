@@ -1,6 +1,5 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'standalone',
   // Silence the build warning for server-side modules
   webpack: (config, { isServer }) => {
     if (!isServer) {
