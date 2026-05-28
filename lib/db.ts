@@ -172,6 +172,12 @@ export function getLeads(filters: LeadFilters = {}): {
   return { data, total };
 }
 
+export function getLeadByEmail(email: string): Lead | undefined {
+  return getDb().prepare('SELECT * FROM leads WHERE email = ? LIMIT 1').get(email) as
+    | Lead
+    | undefined;
+}
+
 export function getLeadById(id: string): Lead | undefined {
   return getDb().prepare('SELECT * FROM leads WHERE id = ?').get(id) as
     | Lead

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkApiKey } from '@/lib/auth';
-import { getLeads, createLead } from '@/lib/db';
+import { getLeads, createLead, getLeadByEmail } from '@/lib/db';
 import type { LeadFilters, Temperature, LeadStatus, LinkedInStatus } from '@/types/lead';
 
 export async function GET(req: NextRequest) {
@@ -39,6 +39,18 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
+
+    // Déduplication : skip silencieux si l'email existe déjà en base
+    if (body.email) {
+      const existing = getLeadByEmail(body.email);
+      if (existing) {
+        return NextResponse.json(
+          { skipped: true, reason: 'duplicate_email', existing_id: existing.id },
+          { status: 200 }
+        );
+      }
+    }
+
     const lead = createLead(body);
     return NextResponse.json(lead, { status: 201 });
   } catch (err) {
