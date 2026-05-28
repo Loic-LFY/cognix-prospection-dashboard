@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * POST /api/outreach
  * Met un lead approuvé en file d'attente de prise de contact.

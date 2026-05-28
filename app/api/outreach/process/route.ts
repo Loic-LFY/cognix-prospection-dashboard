@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * POST /api/outreach/process
  * Traite la file d'attente de prise de contact.

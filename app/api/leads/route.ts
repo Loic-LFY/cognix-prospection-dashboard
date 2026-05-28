@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { checkApiKey } from '@/lib/auth';
 import { getLeads, createLead, getLeadByEmail } from '@/lib/db';

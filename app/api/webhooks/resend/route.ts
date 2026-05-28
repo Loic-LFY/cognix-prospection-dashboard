@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * POST /api/webhooks/resend
  * Endpoint webhook pour recevoir les événements Resend (ouverture email, clics...).
