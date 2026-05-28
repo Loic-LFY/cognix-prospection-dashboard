@@ -370,6 +370,18 @@ export function getStats() {
 
 // ─── Control ──────────────────────────────────────────────────────────────────
 
+/** Synchronise le mode (simulation/reel) selon la présence de PHANTOMBUSTER_API_KEY. */
+export function syncControlMode(): Control {
+  const hasKey = !!process.env.PHANTOMBUSTER_API_KEY;
+  const db = getDb();
+  const current = db.prepare('SELECT mode FROM control WHERE id = 1').get() as { mode: string };
+  const expected = hasKey ? 'reel' : 'simulation';
+  if (current.mode !== expected) {
+    db.prepare("UPDATE control SET mode = :mode, updated_at = datetime('now') WHERE id = 1").run({ mode: expected });
+  }
+  return getControl();
+}
+
 export function getControl(): Control {
   return getDb().prepare('SELECT * FROM control WHERE id = 1').get() as Control;
 }

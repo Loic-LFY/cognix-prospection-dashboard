@@ -1,9 +1,9 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from "next/server";
-import { getControl } from "@/lib/db";
+import { syncControlMode } from "@/lib/db";
 
 export async function GET() {
-  const control = getControl();
+  const control = syncControlMode();
   let pauseDuration: string | null = null;
 
   if (control.status === "paused" && control.paused_at) {
