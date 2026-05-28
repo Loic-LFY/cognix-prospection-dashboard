@@ -31,9 +31,19 @@ export interface Lead {
   recap_generated: number;
   notes: string | null;
   qualification_status: QualificationStatus;
+  outreach_channel: OutreachChannel;
+  outreach_queued_at: string | null;
+  outreach_sent_at: string | null;
+  email_outreach_status: EmailOutreachStatus;
+  email_opened: number;
+  email_opened_at: string | null;
   created_at: string;
   updated_at: string;
 }
+
+export type OutreachChannel = 'linkedin' | 'email';
+
+export type EmailOutreachStatus = 'pending' | 'sent' | 'opened' | 'not_sent';
 
 export type QualificationStatus = 'pending_review' | 'approved' | 'rejected';
 

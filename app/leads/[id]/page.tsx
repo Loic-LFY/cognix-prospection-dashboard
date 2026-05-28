@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { getLeadById, getDb } from '@/lib/db';
 import TemperatureBadge from '@/components/TemperatureBadge';
 import QualificationButtons from '@/components/QualificationButtons';
+import OutreachPanel from '@/components/OutreachPanel';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,6 +55,8 @@ export default async function LeadDetailPage({ params }: Props) {
   const { id } = await params;
   const lead = getLeadById(id);
   if (!lead) notFound();
+
+  const resendConfigured = !!process.env.RESEND_API_KEY;
 
   // Fetch sequences
   const sequences = getDb()
@@ -213,6 +216,11 @@ export default async function LeadDetailPage({ params }: Props) {
           </div>
         </Section>
       )}
+
+      {/* Prise de contact */}
+      <Section title="🚀 Prise de contact">
+        <OutreachPanel lead={lead} resendConfigured={resendConfigured} />
+      </Section>
 
       {/* Notes */}
       {lead.notes && (

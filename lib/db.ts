@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import type { Lead, Control, LeadFilters, QualificationStatus } from '@/types/lead';
+import type { Lead, Control, LeadFilters, QualificationStatus, OutreachChannel } from '@/types/lead';
 
 const DB_PATH =
   process.env.DATABASE_URL ||
@@ -56,6 +56,12 @@ function initDb(db: Database.Database) {
       recap_generated INTEGER DEFAULT 0,
       notes TEXT,
       qualification_status TEXT DEFAULT 'pending_review',
+      outreach_channel TEXT DEFAULT 'linkedin',
+      outreach_queued_at TEXT,
+      outreach_sent_at TEXT,
+      email_outreach_status TEXT DEFAULT 'pending',
+      email_opened INTEGER DEFAULT 0,
+      email_opened_at TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
@@ -106,6 +112,12 @@ function initDb(db: Database.Database) {
     "ALTER TABLE leads ADD COLUMN linkedin_last_reply_at TEXT",
     "ALTER TABLE leads ADD COLUMN linkedin_rdv_proposed INTEGER DEFAULT 0",
     "ALTER TABLE leads ADD COLUMN qualification_status TEXT DEFAULT 'pending_review'",
+    "ALTER TABLE leads ADD COLUMN outreach_channel TEXT DEFAULT 'linkedin'",
+    "ALTER TABLE leads ADD COLUMN outreach_queued_at TEXT",
+    "ALTER TABLE leads ADD COLUMN outreach_sent_at TEXT",
+    "ALTER TABLE leads ADD COLUMN email_outreach_status TEXT DEFAULT 'pending'",
+    "ALTER TABLE leads ADD COLUMN email_opened INTEGER DEFAULT 0",
+    "ALTER TABLE leads ADD COLUMN email_opened_at TEXT",
   ];
   for (const sql of migrations) {
     try { db.exec(sql); } catch { /* column already exists */ }
@@ -247,6 +259,8 @@ export function updateLead(id: string, data: Partial<Lead>): Lead | undefined {
     'linkedin_rdv_proposed',
     'sequence_step', 'last_action_date', 'calendly_sent', 'recap_generated',
     'notes', 'crm_checked', 'crm_exists', 'qualification_status',
+    'outreach_channel', 'outreach_queued_at', 'outreach_sent_at',
+    'email_outreach_status', 'email_opened', 'email_opened_at',
   ];
   const sets: string[] = [];
   const params: Record<string, unknown> = {};
@@ -412,6 +426,53 @@ export function setQualificationStatus(
 
 export function deleteLead(id: string): void {
   getDb().prepare('DELETE FROM leads WHERE id = ?').run(id);
+}
+
+// ─── Outreach queue ─────────────────────────────────────────────────────────────────────────────────────
+
+export function queueLeadForOutreach(id: string, channel: OutreachChannel): Lead | undefined {
+  getDb()
+    .prepare(
+      `UPDATE leads
+       SET outreach_channel = :channel, outreach_queued_at = datetime('now'), updated_at = datetime('now')
+       WHERE id = :id AND qualification_status = 'approved'`
+    )
+    .run({ id, channel });
+  return getLeadById(id);
+}
+
+export function getQueuedLeads(channel: OutreachChannel): Lead[] {
+  return getDb()
+    .prepare(
+      `SELECT * FROM leads
+       WHERE qualification_status = 'approved'
+         AND outreach_channel = ?
+         AND outreach_queued_at IS NOT NULL
+         AND outreach_sent_at IS NULL
+       ORDER BY outreach_queued_at ASC`
+    )
+    .all(channel) as Lead[];
+}
+
+export function markOutreachSent(id: string): Lead | undefined {
+  getDb()
+    .prepare(
+      `UPDATE leads SET outreach_sent_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`
+    )
+    .run(id);
+  return getLeadById(id);
+}
+
+export function markEmailOpened(id: string): Lead | undefined {
+  getDb()
+    .prepare(
+      `UPDATE leads
+       SET email_opened = 1, email_opened_at = datetime('now'),
+           email_outreach_status = 'opened', updated_at = datetime('now')
+       WHERE id = ?`
+    )
+    .run(id);
+  return getLeadById(id);
 }
 
 export function resetDailyActions(): Control {
