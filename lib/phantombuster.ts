@@ -136,6 +136,85 @@ export async function sendLinkedInConnection(
 /**
  * Lance un agent PhantomBuster pour envoyer un message LinkedIn (connexion existante).
  */
+// ─── Usage / quota ───────────────────────────────────────────────────────────
+
+export interface PhantombusterUsage {
+  /** Temps d'exécution mensuel consommé, en secondes */
+  monthlyExecutionTime: number;
+  /** Quota mensuel du plan, en secondes (-1 = non renseigné) */
+  planMonthlyLimit: number;
+  /** Nom du forfait (ex: "Start", "Growth") */
+  planName: string;
+  /** Pourcentage consommé (0-100+) */
+  percentUsed: number;
+  /** true si API key absente */
+  notConfigured?: boolean;
+  /** Message d'erreur éventuel */
+  error?: string;
+}
+
+/**
+ * Forfait Start PhantomBuster : 20h/mois = 72 000 secondes.
+ * Fallback si l'API ne retourne pas la limite.
+ */
+const START_PLAN_LIMIT_SECONDS = 20 * 3600; // 72 000
+
+export async function fetchPhantombusterUsage(): Promise<PhantombusterUsage> {
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    return {
+      monthlyExecutionTime: 0,
+      planMonthlyLimit: START_PLAN_LIMIT_SECONDS,
+      planName: 'Start',
+      percentUsed: 0,
+      notConfigured: true,
+    };
+  }
+
+  try {
+    const res = await fetch(`${PHANTOMBUSTER_BASE}/orgs/fetch-resources`, {
+      headers: { 'X-Phantombuster-Key': apiKey },
+      // Pas de cache pour avoir des données fraîches
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      return {
+        monthlyExecutionTime: 0,
+        planMonthlyLimit: START_PLAN_LIMIT_SECONDS,
+        planName: 'Start',
+        percentUsed: 0,
+        error: data.error ?? `HTTP ${res.status}`,
+      };
+    }
+
+    const data = await res.json();
+
+    // monthlyExecutionTime est en secondes
+    const used: number = data.monthlyExecutionTime ?? 0;
+
+    // Limite depuis le plan (certains champs plan peuvent contenir maxMonthlyExecutionTime)
+    const planLimit: number =
+      data.plan?.maxMonthlyExecutionTime ??
+      data.plan?.monthlyExecutionTime ??
+      START_PLAN_LIMIT_SECONDS;
+
+    const planName: string = data.planName ?? data.plan?.name ?? 'Start';
+    const percentUsed = planLimit > 0 ? Math.round((used / planLimit) * 100) : 0;
+
+    return { monthlyExecutionTime: used, planMonthlyLimit: planLimit, planName, percentUsed };
+  } catch (e) {
+    return {
+      monthlyExecutionTime: 0,
+      planMonthlyLimit: START_PLAN_LIMIT_SECONDS,
+      planName: 'Start',
+      percentUsed: 0,
+      error: String(e),
+    };
+  }
+}
+
 export async function sendLinkedInMessage(
   linkedinUrl: string,
   message: string
