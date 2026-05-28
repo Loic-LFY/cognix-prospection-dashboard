@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import type { Lead, Control, LeadFilters, QualificationStatus, OutreachChannel } from '@/types/lead';
+import type { Lead, Control, LeadFilters, QualificationStatus, OutreachChannel, DailyCount } from '@/types/lead';
 
 const DB_PATH =
   process.env.DATABASE_URL ||
@@ -345,23 +345,37 @@ export function getStats() {
     ).c,
   }));
 
-  const dailyRaw = db
-    .prepare(
-      `SELECT DATE(created_at) as date, COUNT(*) as count
-       FROM leads
-       WHERE created_at >= datetime('now', '-7 days')
-       GROUP BY DATE(created_at)
-       ORDER BY date ASC`
-    )
-    .all() as { date: string; count: number }[];
+  const dailyRaw = db.prepare(`
+    SELECT DATE(created_at) as date, temperature, COUNT(*) as count
+    FROM leads
+    WHERE created_at >= datetime('now', '-7 days')
+    GROUP BY DATE(created_at), temperature
+  `).all() as { date: string; temperature: string; count: number }[];
 
-  const daily: { date: string; count: number }[] = [];
+  const dailyConnRaw = db.prepare(`
+    SELECT DATE(connection_accepted_at) as date, COUNT(*) as count
+    FROM leads
+    WHERE connection_accepted_at IS NOT NULL
+      AND connection_accepted_at >= datetime('now', '-7 days')
+    GROUP BY DATE(connection_accepted_at)
+  `).all() as { date: string; count: number }[];
+
+  const daily: DailyCount[] = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
     const dateStr = d.toISOString().slice(0, 10);
-    const found = dailyRaw.find((r) => r.date === dateStr);
-    daily.push({ date: dateStr, count: found?.count ?? 0 });
+    const rows = dailyRaw.filter((r) => r.date === dateStr);
+    const conn = dailyConnRaw.find((r) => r.date === dateStr);
+    daily.push({
+      date: dateStr,
+      count: rows.reduce((s, r) => s + r.count, 0),
+      new: rows.find((r) => r.temperature === 'new')?.count ?? 0,
+      froid: rows.find((r) => r.temperature === 'froid')?.count ?? 0,
+      tiede: rows.find((r) => r.temperature === 'tiede')?.count ?? 0,
+      chaud: rows.find((r) => r.temperature === 'chaud')?.count ?? 0,
+      connections: conn?.count ?? 0,
+    });
   }
 
   return {

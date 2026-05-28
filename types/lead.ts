@@ -108,6 +108,11 @@ export interface FunnelStep {
 export interface DailyCount {
   date: string;
   count: number;
+  new: number;
+  froid: number;
+  tiede: number;
+  chaud: number;
+  connections: number;
 }
 
 export interface LeadsResponse {
