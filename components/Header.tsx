@@ -119,10 +119,22 @@ export default function Header() {
 
           <button
             onClick={fetchStatus}
-            className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition"
+            disabled={loading}
+            className={`p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition ${loading ? 'animate-spin' : ''}`}
             title="Actualiser"
           >
             🔄
+          </button>
+
+          <button
+            onClick={async () => {
+              await fetch('/api/auth/logout', { method: 'POST' });
+              window.location.href = '/login';
+            }}
+            className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition text-xs"
+            title="Déconnexion"
+          >
+            🔐
           </button>
         </div>
       </div>

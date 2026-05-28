@@ -9,6 +9,8 @@ const inter = Inter({ subsets: ['latin'] });
 export const metadata: Metadata = {
   title: 'Cognix Prospection Dashboard',
   description: 'Suivi des leads et prospection LinkedIn — Cognix Systems',
+  robots: { index: false, follow: false },
+  icons: { icon: '/logo-cognix.png', apple: '/logo-cognix.png' },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
