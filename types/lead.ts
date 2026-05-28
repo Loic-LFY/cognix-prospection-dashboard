@@ -30,9 +30,12 @@ export interface Lead {
   calendly_sent: number;
   recap_generated: number;
   notes: string | null;
+  qualification_status: QualificationStatus;
   created_at: string;
   updated_at: string;
 }
+
+export type QualificationStatus = 'pending_review' | 'approved' | 'rejected';
 
 export type LeadStatus =
   | 'new'

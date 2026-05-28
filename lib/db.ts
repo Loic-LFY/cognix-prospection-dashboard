@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import type { Lead, Control, LeadFilters } from '@/types/lead';
+import type { Lead, Control, LeadFilters, QualificationStatus } from '@/types/lead';
 
 const DB_PATH =
   process.env.DATABASE_URL ||
@@ -55,6 +55,7 @@ function initDb(db: Database.Database) {
       calendly_sent INTEGER DEFAULT 0,
       recap_generated INTEGER DEFAULT 0,
       notes TEXT,
+      qualification_status TEXT DEFAULT 'pending_review',
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
@@ -104,6 +105,7 @@ function initDb(db: Database.Database) {
     "ALTER TABLE leads ADD COLUMN linkedin_engagement TEXT DEFAULT 'none'",
     "ALTER TABLE leads ADD COLUMN linkedin_last_reply_at TEXT",
     "ALTER TABLE leads ADD COLUMN linkedin_rdv_proposed INTEGER DEFAULT 0",
+    "ALTER TABLE leads ADD COLUMN qualification_status TEXT DEFAULT 'pending_review'",
   ];
   for (const sql of migrations) {
     try { db.exec(sql); } catch { /* column already exists */ }
@@ -244,7 +246,7 @@ export function updateLead(id: string, data: Partial<Lead>): Lead | undefined {
     'linkedin_conv_step', 'linkedin_engagement', 'linkedin_last_reply_at',
     'linkedin_rdv_proposed',
     'sequence_step', 'last_action_date', 'calendly_sent', 'recap_generated',
-    'notes', 'crm_checked', 'crm_exists',
+    'notes', 'crm_checked', 'crm_exists', 'qualification_status',
   ];
   const sets: string[] = [];
   const params: Record<string, unknown> = {};
@@ -392,6 +394,24 @@ export function incrementDailyActions(count = 1): Control {
     )
     .run({ count });
   return getControl();
+}
+
+// ─── Qualification manuelle ─────────────────────────────────────────────────────────────────────────────────
+
+export function setQualificationStatus(
+  id: string,
+  status: QualificationStatus
+): Lead | undefined {
+  getDb()
+    .prepare(
+      `UPDATE leads SET qualification_status = :status, updated_at = datetime('now') WHERE id = :id`
+    )
+    .run({ id, status });
+  return getLeadById(id);
+}
+
+export function deleteLead(id: string): void {
+  getDb().prepare('DELETE FROM leads WHERE id = ?').run(id);
 }
 
 export function resetDailyActions(): Control {

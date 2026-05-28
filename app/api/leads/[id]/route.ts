@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkApiKey } from '@/lib/auth';
-import { getLeadById, updateLead } from '@/lib/db';
+import { getLeadById, updateLead, deleteLead } from '@/lib/db';
 
 export async function GET(
   req: NextRequest,
@@ -13,6 +13,21 @@ export async function GET(
   const lead = getLeadById(id);
   if (!lead) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   return NextResponse.json(lead);
+}
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const authError = checkApiKey(req);
+  if (authError) return authError;
+
+  const { id } = await params;
+  const lead = getLeadById(id);
+  if (!lead) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+  deleteLead(id);
+  return NextResponse.json({ deleted: true });
 }
 
 export async function PATCH(

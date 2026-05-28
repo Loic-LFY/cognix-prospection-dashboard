@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { getLeadById, getDb } from '@/lib/db';
 import TemperatureBadge from '@/components/TemperatureBadge';
+import QualificationButtons from '@/components/QualificationButtons';
 
 export const dynamic = 'force-dynamic';
 
@@ -105,6 +106,20 @@ export default async function LeadDetailPage({ params }: Props) {
           )}
           <RecapButton leadId={lead.id} />
         </div>
+      </div>
+
+      {/* Validation manuelle - bloc critique avant toute prise de contact */}
+      <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-xl p-5">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400 mb-3">
+          🛡️ Validation manuelle
+        </h3>
+        <p className="text-xs text-amber-600 dark:text-amber-500 mb-4">
+          Aucune prise de contact ne sera déclenchée sans validation manuelle préalable.
+        </p>
+        <QualificationButtons
+          leadId={lead.id}
+          currentStatus={lead.qualification_status ?? 'pending_review'}
+        />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
