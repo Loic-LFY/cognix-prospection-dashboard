@@ -1,13 +1,11 @@
 'use client';
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 
 export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -20,8 +18,9 @@ export default function LoginPage() {
         body: JSON.stringify({ password }),
       });
       if (res.ok) {
-        router.push('/');
-        router.refresh();
+        // Full reload obligatoire : le middleware doit voir le cookie
+        // dès la première requête vers '/', router.push ne le garantit pas.
+        window.location.href = '/';
       } else {
         const data = await res.json();
         setError(data.error ?? 'Erreur de connexion');
