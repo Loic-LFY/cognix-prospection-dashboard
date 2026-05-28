@@ -10,7 +10,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const authError = checkApiKey(req);
+  const authError = await checkApiKey(req);
   if (authError) return authError;
 
   const { id } = await params;

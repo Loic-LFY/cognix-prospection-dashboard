@@ -5,7 +5,7 @@ import { getLeads, createLead, getLeadByEmail } from '@/lib/db';
 import type { LeadFilters, Temperature, LeadStatus, LinkedInStatus } from '@/types/lead';
 
 export async function GET(req: NextRequest) {
-  const authError = checkApiKey(req);
+  const authError = await checkApiKey(req);
   if (authError) return authError;
 
   const { searchParams } = req.nextUrl;
@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const authError = checkApiKey(req);
+  const authError = await checkApiKey(req);
   if (authError) return authError;
 
   try {

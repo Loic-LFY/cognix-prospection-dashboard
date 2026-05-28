@@ -15,7 +15,7 @@ import { getLeadById, queueLeadForOutreach } from '@/lib/db';
 import type { OutreachChannel } from '@/types/lead';
 
 export async function POST(req: NextRequest) {
-  const authError = checkApiKey(req);
+  const authError = await checkApiKey(req);
   if (authError) return authError;
 
   const body = await req.json();

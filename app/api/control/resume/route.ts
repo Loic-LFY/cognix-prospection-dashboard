@@ -4,7 +4,7 @@ import { checkApiKey } from '@/lib/auth';
 import { resumeControl } from '@/lib/db';
 
 export async function POST(req: NextRequest) {
-  const authError = checkApiKey(req);
+  const authError = await checkApiKey(req);
   if (authError) return authError;
 
   const control = resumeControl();

@@ -24,7 +24,7 @@ import { sendEmail, isResendConfigured } from '@/lib/resend';
 const INTER_ACTION_DELAY_MIN = 3 * 60 * 1000; // 3 min entre actions LinkedIn
 
 export async function POST(req: NextRequest) {
-  const authError = checkApiKey(req);
+  const authError = await checkApiKey(req);
   if (authError) return authError;
 
   const results: Array<{ leadId: string; company: string; channel: string; result: string }> = [];

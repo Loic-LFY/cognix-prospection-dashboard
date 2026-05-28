@@ -11,14 +11,14 @@ const PUBLIC_PATHS = [
   '/robots.txt',
 ];
 
-export function middleware(req: NextRequest) {
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Toujours laisser passer ces paths
+  // Paths publics
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }
-  // /api/control/status est public (utilisé par le Header avant auth)
+  // Statut moteur public (Header le fetch avant auth)
   if (pathname === '/api/control/status') return NextResponse.next();
 
   // Machine-to-machine : x-api-key
@@ -30,7 +30,7 @@ export function middleware(req: NextRequest) {
 
   // Browser : session cookie
   const token = req.cookies.get(SESSION_COOKIE)?.value;
-  if (token && validateSessionToken(token)) return NextResponse.next();
+  if (token && (await validateSessionToken(token))) return NextResponse.next();
 
   // Non authentifié
   if (pathname.startsWith('/api/')) {

@@ -4,7 +4,7 @@ import { checkApiKey } from '@/lib/auth';
 import { pauseControl } from '@/lib/db';
 
 export async function POST(req: NextRequest) {
-  const authError = checkApiKey(req);
+  const authError = await checkApiKey(req);
   if (authError) return authError;
 
   let reason: string | undefined;
