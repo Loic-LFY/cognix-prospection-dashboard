@@ -26,17 +26,27 @@ export default function Header() {
 
   const handleStop = async () => {
     if (!confirm('Mettre en pause le prospecting ?')) return;
+    // Optimistic UI
+    setControl((prev) => prev ? { ...prev, status: 'paused' } : prev);
     setLoading(true);
-    await fetch('/api/control/stop', { method: 'POST' });
-    await fetchStatus();
-    setLoading(false);
+    try {
+      await fetch('/api/control/stop', { method: 'POST' });
+    } finally {
+      await fetchStatus();
+      setLoading(false);
+    }
   };
 
   const handleResume = async () => {
+    // Optimistic UI
+    setControl((prev) => prev ? { ...prev, status: 'active' } : prev);
     setLoading(true);
-    await fetch('/api/control/resume', { method: 'POST' });
-    await fetchStatus();
-    setLoading(false);
+    try {
+      await fetch('/api/control/resume', { method: 'POST' });
+    } finally {
+      await fetchStatus();
+      setLoading(false);
+    }
   };
 
   return (
