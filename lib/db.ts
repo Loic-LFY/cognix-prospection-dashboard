@@ -122,6 +122,15 @@ function initDb(db: Database.Database) {
   for (const sql of migrations) {
     try { db.exec(sql); } catch { /* column already exists */ }
   }
+
+  // Reset les leads 'chaud' sans activité réelle (import incorrect)
+  db.exec(`
+    UPDATE leads SET temperature = 'new', updated_at = datetime('now')
+    WHERE temperature = 'chaud'
+      AND linkedin_connected = 0
+      AND linkedin_message_sent = 0
+      AND status = 'new'
+  `);
 }
 
 // ─── Leads ───────────────────────────────────────────────────────────────────
@@ -233,7 +242,7 @@ export function createLead(data: Partial<Lead>): Lead {
     current_host: data.current_host ?? null,
     angle: data.angle ?? null,
     status: data.status ?? 'new',
-    temperature: data.temperature ?? 'new',
+    temperature: 'new',  // toujours 'new' à la création, évolue via le pipeline
     linkedin_url: data.linkedin_url ?? null,
     linkedin_found: data.linkedin_found ?? 0,
     linkedin_connected: data.linkedin_connected ?? 0,
