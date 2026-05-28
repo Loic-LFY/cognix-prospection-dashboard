@@ -25,6 +25,10 @@ export interface Lead {
   connection_sent_at: string | null;
   connection_accepted_at: string | null;
   linkedin_message_sent_at: string | null;
+  linkedin_conv_step: number;
+  linkedin_engagement: string;
+  linkedin_last_reply_at: string | null;
+  linkedin_rdv_proposed: number;
   sequence_step: number;
   last_action_date: string | null;
   calendly_sent: number;
@@ -90,6 +94,7 @@ export interface Stats {
   connections_accepted: number;
   leads_chauds: number;
   ban_count: number;
+  linkedin_engaged: number;
   funnel: FunnelStep[];
   daily: DailyCount[];
 }
