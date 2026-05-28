@@ -38,6 +38,7 @@ function ProgressBar({ percent, warning }: { percent: number; warning: boolean }
 export default function PhantombusterUsageWidget() {
   const [data, setData] = useState<PhantombusterUsage | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     fetch('/api/phantombuster/usage')
@@ -48,6 +49,13 @@ export default function PhantombusterUsageWidget() {
       })
       .catch(() => setLoading(false));
   }, []);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    const d = await fetch('/api/phantombuster/usage').then((r) => r.json()).catch(() => null);
+    if (d) setData(d);
+    setRefreshing(false);
+  };
 
   if (loading) {
     return (
@@ -90,6 +98,14 @@ export default function PhantombusterUsageWidget() {
           <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-mono">
             {data.planName}
           </span>
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className={`ml-1 text-gray-400 hover:text-gray-600 text-xs transition ${refreshing ? 'animate-spin' : ''}`}
+            title="Actualiser"
+          >
+            🔄
+          </button>
         </div>
 
         {/* Alerte 80% */}

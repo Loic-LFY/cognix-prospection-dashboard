@@ -57,6 +57,7 @@ export default function LeadTable() {
   const [sortBy, setSortBy] = useState('created_at');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [pageSize] = useState(20);
+  const [refreshing, setRefreshing] = useState(false);
 
   const fetchLeads = useCallback(async () => {
     setLoading(true);
@@ -159,8 +160,9 @@ export default function LeadTable() {
             <span>{total} lead{total > 1 ? 's' : ''}</span>
           )}
           <button
-            onClick={fetchLeads}
-            className="p-1 hover:text-gray-700 dark:hover:text-gray-200 transition"
+            onClick={async () => { setRefreshing(true); await fetchLeads(); setRefreshing(false); }}
+            disabled={refreshing}
+            className={`p-1 hover:text-gray-700 dark:hover:text-gray-200 transition ${refreshing ? 'animate-spin' : ''}`}
             title="Rafraîchir"
           >
             🔄
