@@ -53,7 +53,7 @@ export async function validateSessionToken(token: string): Promise<boolean> {
   try {
     const key = await getKey(getSecret());
     const sigBytes = hexToBytes(sigHex);
-    return await crypto.subtle.verify('HMAC', key, sigBytes, encoder.encode(payload));
+    return await crypto.subtle.verify('HMAC', key, sigBytes.buffer as ArrayBuffer, encoder.encode(payload));
   } catch {
     return false;
   }
