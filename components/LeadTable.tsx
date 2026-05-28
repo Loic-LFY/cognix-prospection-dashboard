@@ -88,6 +88,13 @@ export default function LeadTable() {
     fetchLeads();
   }, [fetchLeads]);
 
+  // Rafraîchit la liste quand un lead est supprimé depuis LeadRow
+  useEffect(() => {
+    const handler = () => fetchLeads();
+    window.addEventListener('leadDeleted', handler);
+    return () => window.removeEventListener('leadDeleted', handler);
+  }, [fetchLeads]);
+
   // Reset page when filters change
   useEffect(() => {
     setPage(1);
@@ -196,6 +203,12 @@ export default function LeadTable() {
               >
                 Dernière action <SortIcon col="last_action_date" />
               </th>
+              <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                Validation
+              </th>
+              <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                Canal
+              </th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                 Statut
               </th>
@@ -204,7 +217,7 @@ export default function LeadTable() {
           <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
             {!loading && data.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-12 text-center text-gray-400 dark:text-gray-500">
+                <td colSpan={11} className="px-4 py-12 text-center text-gray-400 dark:text-gray-500">
                   Aucun lead trouvé
                 </td>
               </tr>

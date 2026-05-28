@@ -1,7 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
-import type { Lead, LeadStatus, LinkedInStatus } from '@/types/lead';
+import type { Lead } from '@/types/lead';
 import TemperatureBadge from './TemperatureBadge';
 
 interface Props {
@@ -62,8 +63,46 @@ export default function LeadRow({ lead }: Props) {
   const status = statusConfig[lead.status] ?? statusConfig.new;
   const liStatus = linkedinConfig[lead.linkedin_status] ?? linkedinConfig.pending;
 
+  const [qualStatus, setQualStatus] = useState(lead.qualification_status ?? 'pending_review');
+  const [channel, setChannel] = useState<'linkedin' | 'email'>(
+    (lead.outreach_channel as 'linkedin' | 'email') ?? 'linkedin'
+  );
+  const [busy, setBusy] = useState(false);
+
+  async function qualify(action: 'approve' | 'delete') {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/leads/${lead.id}/qualify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+      if (res.ok) {
+        if (action === 'delete') {
+          window.dispatchEvent(new CustomEvent('leadDeleted', { detail: lead.id }));
+          return;
+        }
+        const updated = await res.json();
+        setQualStatus(updated.qualification_status);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleChannel() {
+    const next: 'linkedin' | 'email' = channel === 'linkedin' ? 'email' : 'linkedin';
+    setChannel(next);
+    await fetch(`/api/leads/${lead.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ outreach_channel: next }),
+    });
+  }
+
   return (
     <tr className="hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors group">
+      {/* Société */}
       <td className="px-4 py-3">
         <Link
           href={`/leads/${lead.id}`}
@@ -75,24 +114,36 @@ export default function LeadRow({ lead }: Props) {
           <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{lead.sector}</div>
         )}
       </td>
+
+      {/* Score */}
       <td className="px-4 py-3">
         <ScoreDots score={lead.score} />
       </td>
+
+      {/* Localisation */}
       <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
         {lead.location ?? '—'}
       </td>
+
+      {/* Contact */}
       <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
         <div>{lead.contact_name ?? '—'}</div>
         {lead.contact_title && (
           <div className="text-xs text-gray-400 dark:text-gray-500">{lead.contact_title}</div>
         )}
       </td>
+
+      {/* Hébergeur */}
       <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
         {lead.current_host ?? '—'}
       </td>
+
+      {/* Température */}
       <td className="px-4 py-3">
         <TemperatureBadge temperature={lead.temperature} />
       </td>
+
+      {/* LinkedIn */}
       <td className="px-4 py-3">
         {lead.linkedin_url ? (
           <a
@@ -107,9 +158,58 @@ export default function LeadRow({ lead }: Props) {
           <span className={`text-xs ${liStatus.className}`}>{liStatus.label}</span>
         )}
       </td>
+
+      {/* Dernière action */}
       <td className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">
         {formatDate(lead.last_action_date)}
       </td>
+
+      {/* Validation manuelle */}
+      <td className="px-3 py-3">
+        {qualStatus === 'approved' ? (
+          <span className="inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400 font-medium">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-500" /> Validé
+          </span>
+        ) : qualStatus === 'rejected' ? (
+          <span className="text-xs text-red-400 line-through">Rejeté</span>
+        ) : (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => qualify('approve')}
+              disabled={busy}
+              title="Valider ce lead"
+              className="px-2 py-1 bg-green-100 hover:bg-green-200 dark:bg-green-900 dark:hover:bg-green-800 text-green-700 dark:text-green-300 text-xs rounded-lg transition disabled:opacity-40"
+            >
+              ✅
+            </button>
+            <button
+              onClick={() => { if (confirm('Supprimer ce lead ?')) qualify('delete'); }}
+              disabled={busy}
+              title="Supprimer"
+              className="px-2 py-1 bg-red-100 hover:bg-red-200 dark:bg-red-900 dark:hover:bg-red-800 text-red-700 dark:text-red-300 text-xs rounded-lg transition disabled:opacity-40"
+            >
+              🗑️
+            </button>
+          </div>
+        )}
+      </td>
+
+      {/* Toggle canal */}
+      <td className="px-3 py-3">
+        <button
+          onClick={toggleChannel}
+          title={`Canal : ${channel} — cliquer pour changer`}
+          className={`px-2 py-1 rounded-lg text-xs font-medium transition ${
+            channel === 'linkedin'
+              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
+              : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300'
+          }`}
+        >
+          {channel === 'linkedin' ? '💼 LK' : '📧 Mail'}
+        </button>
+      </td>
+
+      {/* Statut */}
       <td className="px-4 py-3">
         <span
           className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${status.className}`}
