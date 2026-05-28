@@ -4,6 +4,7 @@ import { getLeadById, getDb } from '@/lib/db';
 import TemperatureBadge from '@/components/TemperatureBadge';
 import QualificationButtons from '@/components/QualificationButtons';
 import OutreachPanel from '@/components/OutreachPanel';
+import EmailStatus from '@/components/EmailStatus';
 
 export const dynamic = 'force-dynamic';
 
@@ -151,6 +152,12 @@ export default async function LeadDetailPage({ params }: Props) {
             <Field label="Email" value={lead.email ? <a href={`mailto:${lead.email}`} className="text-blue-600 hover:underline">{lead.email}</a> : null} />
             <Field label="Téléphone" value={lead.phone} />
             <Field label="CRM vérifié" value={lead.crm_checked ? (lead.crm_exists ? '✅ Existe' : '❌ Absent') : '⏳ Non vérifié'} />
+            {lead.outreach_channel === 'email' && (
+              <div className="flex flex-col gap-0.5 col-span-2">
+                <span className="text-xs text-gray-500 dark:text-gray-400">Email ouvert</span>
+                <EmailStatus lead={lead} />
+              </div>
+            )}
           </div>
         </Section>
 
