@@ -41,6 +41,11 @@ export interface Lead {
   email_outreach_status: EmailOutreachStatus;
   email_opened: number;
   email_opened_at: string | null;
+  // Message previews (générés par Hermes, affichés avant envoi)
+  linkedin_connection_note: string | null;
+  linkedin_first_message: string | null;
+  email_draft_subject: string | null;
+  email_draft_body: string | null;
   created_at: string;
   updated_at: string;
 }
