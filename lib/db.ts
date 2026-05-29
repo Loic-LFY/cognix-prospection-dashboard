@@ -118,6 +118,10 @@ function initDb(db: Database.Database) {
     "ALTER TABLE leads ADD COLUMN email_outreach_status TEXT DEFAULT 'pending'",
     "ALTER TABLE leads ADD COLUMN email_opened INTEGER DEFAULT 0",
     "ALTER TABLE leads ADD COLUMN email_opened_at TEXT",
+    "ALTER TABLE leads ADD COLUMN linkedin_connection_note TEXT",
+    "ALTER TABLE leads ADD COLUMN linkedin_first_message TEXT",
+    "ALTER TABLE leads ADD COLUMN email_draft_subject TEXT",
+    "ALTER TABLE leads ADD COLUMN email_draft_body TEXT",
   ];
   for (const sql of migrations) {
     try { db.exec(sql); } catch { /* column already exists */ }
@@ -270,6 +274,7 @@ export function updateLead(id: string, data: Partial<Lead>): Lead | undefined {
     'notes', 'crm_checked', 'crm_exists', 'qualification_status',
     'outreach_channel', 'outreach_queued_at', 'outreach_sent_at',
     'email_outreach_status', 'email_opened', 'email_opened_at',
+    'linkedin_connection_note', 'linkedin_first_message', 'email_draft_subject', 'email_draft_body',
   ];
   const sets: string[] = [];
   const params: Record<string, unknown> = {};
