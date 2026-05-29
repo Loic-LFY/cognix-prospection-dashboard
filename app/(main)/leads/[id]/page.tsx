@@ -224,6 +224,54 @@ export default async function LeadDetailPage({ params }: Props) {
         </Section>
       )}
 
+
+      {/* Aperçu des messages — LinkedIn et Email */}
+      {(lead.linkedin_connection_note || lead.email_draft_subject) && (
+        <div className="bg-indigo-50 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-800 rounded-xl p-5">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-400 mb-4">
+            👁️ Aperçu des messages
+          </h3>
+          <div className="space-y-5">
+            {lead.linkedin_connection_note && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">
+                  💼 Note de connexion LinkedIn
+                  <span className="ml-2 text-gray-400 font-normal normal-case">({lead.linkedin_connection_note.length}/160 chars)</span>
+                </p>
+                <div className="bg-white dark:bg-gray-800 border border-indigo-200 dark:border-indigo-700 rounded-lg p-3 text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap font-mono">
+                  {lead.linkedin_connection_note}
+                </div>
+              </div>
+            )}
+            {lead.linkedin_first_message && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">
+                  💬 Premier message LinkedIn (si connexion acceptée)
+                </p>
+                <div className="bg-white dark:bg-gray-800 border border-indigo-200 dark:border-indigo-700 rounded-lg p-3 text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap">
+                  {lead.linkedin_first_message}
+                </div>
+              </div>
+            )}
+            {lead.email_draft_subject && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">
+                  📧 Email J0 (si canal email sélectionné)
+                </p>
+                <div className="bg-white dark:bg-gray-800 border border-indigo-200 dark:border-indigo-700 rounded-lg p-3 text-sm">
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                    Objet : <span className="font-medium text-gray-800 dark:text-gray-200">{lead.email_draft_subject}</span>
+                  </div>
+                  <div className="text-gray-800 dark:text-gray-200 whitespace-pre-wrap">
+                    {lead.email_draft_body}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Prise de contact */}
       <Section title="🚀 Prise de contact">
         <OutreachPanel lead={lead} resendConfigured={resendConfigured} />
