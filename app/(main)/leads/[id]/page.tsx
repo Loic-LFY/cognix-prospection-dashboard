@@ -5,6 +5,7 @@ import TemperatureBadge from '@/components/TemperatureBadge';
 import QualificationButtons from '@/components/QualificationButtons';
 import OutreachPanel from '@/components/OutreachPanel';
 import EmailStatus from '@/components/EmailStatus';
+import RecapButton from '@/components/RecapButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -298,33 +299,5 @@ export default async function LeadDetailPage({ params }: Props) {
         </div>
       </Section>
     </div>
-  );
-}
-
-// Client component for recap generation
-function RecapButton({ leadId }: { leadId: string }) {
-  return (
-    <form
-      action={`/api/leads/${leadId}/recap`}
-      method="post"
-      onSubmit={async (e) => {
-        e.preventDefault();
-        const res = await fetch(`/api/leads/${leadId}/recap`, { method: 'POST' });
-        if (res.ok) {
-          const { recap } = await res.json();
-          const win = window.open('', '_blank');
-          if (win) {
-            win.document.write(`<pre style="font-family:monospace;padding:20px;white-space:pre-wrap">${recap}</pre>`);
-          }
-        }
-      }}
-    >
-      <button
-        type="submit"
-        className="inline-flex items-center gap-1.5 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium rounded-lg transition"
-      >
-        📄 Générer récap
-      </button>
-    </form>
   );
 }
