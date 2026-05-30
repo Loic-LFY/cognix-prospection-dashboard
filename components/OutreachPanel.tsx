@@ -17,11 +17,13 @@ export default function OutreachPanel({ lead, resendConfigured }: Props) {
   );
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const apiKey = process.env.NEXT_PUBLIC_DASHBOARD_API_KEY || '';
+  const [connectPending, setConnectPending] = useState(false);
+  const [connectResult, setConnectResult] = useState<string | null>(null);
 
   const isQueued = !!lead.outreach_queued_at && !lead.outreach_sent_at;
   const isSent = !!lead.outreach_sent_at;
+  const isConnectionSent =
+    lead.linkedin_status === 'connection_sent' && !lead.linkedin_connected;
 
   async function handleQueue() {
     setResult(null);
@@ -30,7 +32,7 @@ export default function OutreachPanel({ lead, resendConfigured }: Props) {
     try {
       const res = await fetch('/api/outreach', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ leadId: lead.id, channel }),
       });
       const data = await res.json();
@@ -47,6 +49,51 @@ export default function OutreachPanel({ lead, resendConfigured }: Props) {
     }
   }
 
+  async function handleMarkConnected() {
+    setConnectPending(true);
+    setConnectResult(null);
+    setError(null);
+
+    try {
+      // 1. Mettre à jour le statut de connexion
+      const patchRes = await fetch(`/api/leads/${lead.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          linkedin_connected: 1,
+          linkedin_status: 'connected',
+          status: 'connected',
+          connection_accepted_at: new Date().toISOString(),
+        }),
+      });
+
+      if (!patchRes.ok) {
+        const d = await patchRes.json();
+        setError(d.error ?? 'Erreur lors de la mise à jour');
+        return;
+      }
+
+      // 2. Re-queue automatique pour le message de prospection
+      const queueRes = await fetch('/api/outreach', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId: lead.id, channel: 'linkedin' }),
+      });
+
+      if (queueRes.ok) {
+        setConnectResult('✅ Connexion enregistrée — le message de prospection partira au prochain cycle (09h-20h Paris).');
+      } else {
+        setConnectResult('✅ Connexion enregistrée — remettez le lead en file d\'attente manuellement.');
+      }
+
+      startTransition(() => router.refresh());
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setConnectPending(false);
+    }
+  }
+
   if (lead.qualification_status !== 'approved') {
     return (
       <div className="text-sm text-gray-500 dark:text-gray-400 italic">
@@ -57,11 +104,39 @@ export default function OutreachPanel({ lead, resendConfigured }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* Toggle canal */}
+
+      {/* ── Bloc connexion acceptée ─────────────────────────────────────────── */}
+      {isConnectionSent && (
+        <div className="p-4 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-xl">
+          <div className="flex items-start gap-3">
+            <span className="text-2xl">⏳</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-1">
+                Demande de connexion envoyée
+              </p>
+              <p className="text-xs text-blue-600 dark:text-blue-400 mb-3">
+                Dès que {lead.contact_name ?? 'le contact'} accepte sur LinkedIn,
+                marquez la connexion ici pour déclencher l'envoi du message de prospection.
+              </p>
+              <button
+                onClick={handleMarkConnected}
+                disabled={connectPending}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-700 hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition"
+              >
+                {connectPending ? '⏳ En cours...' : '🤝 Marquer comme connecté'}
+              </button>
+              {connectResult && (
+                <p className="mt-2 text-sm text-green-700 dark:text-green-400">{connectResult}</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Toggle canal ────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-4">
         <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Canal :</span>
 
-        {/* LinkedIn */}
         <button
           onClick={() => setChannel('linkedin')}
           className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition ${
@@ -73,7 +148,6 @@ export default function OutreachPanel({ lead, resendConfigured }: Props) {
           💼 LinkedIn
         </button>
 
-        {/* Email toggle */}
         <button
           onClick={() => setChannel('email')}
           disabled={!resendConfigured}
@@ -99,7 +173,7 @@ export default function OutreachPanel({ lead, resendConfigured }: Props) {
         </div>
       )}
 
-      {/* Statut actuel */}
+      {/* Statut file d'attente */}
       {isSent && (
         <div className="flex items-center gap-2 text-sm text-green-700 dark:text-green-400">
           ✅ Prise de contact envoyée le{' '}
@@ -114,7 +188,7 @@ export default function OutreachPanel({ lead, resendConfigured }: Props) {
         </div>
       )}
 
-      {/* Bouton */}
+      {/* Bouton mise en file */}
       {!isQueued && !isSent && (
         <button
           onClick={handleQueue}
