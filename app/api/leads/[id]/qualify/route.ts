@@ -1,10 +1,18 @@
 export const dynamic = 'force-dynamic';
+/**
+ * POST /api/leads/[id]/qualify
+ * Qualification manuelle d'un lead.
+ *
+ * Body: { action: 'approve' | 'reject' | 'delete' }
+ *
+ * - approve → qualification_status = 'approved'
+ * - reject  → qualification_status = 'rejected'
+ * - delete  → suppression définitive du lead
+ */
+
 import { NextRequest, NextResponse } from 'next/server';
 import { checkApiKey } from '@/lib/auth';
-import { setQualificationStatus, deleteLead, getLeadById } from '@/lib/db';
-import type { QualificationStatus } from '@/types/lead';
-
-const VALID_STATUSES: QualificationStatus[] = ['pending_review', 'approved', 'rejected'];
+import { getLeadById, setQualificationStatus, deleteLead } from '@/lib/db';
 
 export async function POST(
   req: NextRequest,
@@ -15,26 +23,25 @@ export async function POST(
 
   const { id } = await params;
 
-  const lead = getLeadById(id);
-  if (!lead) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  const body = await req.json().catch(() => ({}));
+  const { action } = body as { action?: string };
 
-  const body = await req.json();
-  const { action } = body as { action: 'approve' | 'reject' | 'delete' };
+  if (!action || !['approve', 'reject', 'delete'].includes(action)) {
+    return NextResponse.json(
+      { error: 'action requis : approve | reject | delete' },
+      { status: 400 }
+    );
+  }
+
+  const lead = getLeadById(id);
+  if (!lead) return NextResponse.json({ error: 'Lead non trouvé' }, { status: 404 });
 
   if (action === 'delete') {
     deleteLead(id);
-    return NextResponse.json({ deleted: true });
+    return NextResponse.json({ deleted: true, id });
   }
 
-  if (action === 'approve') {
-    const updated = setQualificationStatus(id, 'approved');
-    return NextResponse.json(updated);
-  }
-
-  if (action === 'reject') {
-    const updated = setQualificationStatus(id, 'rejected');
-    return NextResponse.json(updated);
-  }
-
-  return NextResponse.json({ error: 'Action invalide. Valeurs acceptées : approve | reject | delete' }, { status: 400 });
+  const status = action === 'approve' ? 'approved' : 'rejected';
+  const updated = setQualificationStatus(id, status);
+  return NextResponse.json(updated);
 }
