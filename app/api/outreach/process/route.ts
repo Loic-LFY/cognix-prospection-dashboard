@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
         updateLead(lead.id, {
           linkedin_url: searchRes.profileUrl,
           linkedin_found: 1,
-          linkedin_status: 'url_found',
+          linkedin_status: 'found',
         });
         lead.linkedin_url = searchRes.profileUrl;
       } else if (searchRes.status === 'skipped') {
