@@ -60,14 +60,17 @@ function formatDate(d: string | null) {
 }
 
 export default function LeadRow({ lead }: Props) {
-  const status = statusConfig[lead.status] ?? statusConfig.new;
-  const liStatus = linkedinConfig[lead.linkedin_status] ?? linkedinConfig.pending;
+  const [currentLiStatus, setCurrentLiStatus] = useState(lead.linkedin_status);
+  const [currentStatus, setCurrentStatus] = useState(lead.status);
+  const status = statusConfig[currentStatus] ?? statusConfig.new;
+  const liStatus = linkedinConfig[currentLiStatus] ?? linkedinConfig.pending;
 
   const [qualStatus, setQualStatus] = useState(lead.qualification_status ?? 'pending_review');
   const [channel, setChannel] = useState<'linkedin' | 'email'>(
     (lead.outreach_channel as 'linkedin' | 'email') ?? 'linkedin'
   );
   const [busy, setBusy] = useState(false);
+  const [connectBusy, setConnectBusy] = useState(false);
 
   async function qualify(action: 'approve' | 'delete') {
     setBusy(true);
@@ -98,6 +101,38 @@ export default function LeadRow({ lead }: Props) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ outreach_channel: next }),
     });
+  }
+
+  async function handleMarkConnected() {
+    setConnectBusy(true);
+    try {
+      // 1. Mise à jour du statut connexion
+      const patchRes = await fetch(`/api/leads/${lead.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          linkedin_connected: 1,
+          linkedin_status: 'connected',
+          status: 'connected',
+          connection_accepted_at: new Date().toISOString(),
+        }),
+      });
+
+      if (!patchRes.ok) return;
+
+      // 2. Re-queue automatique pour le message
+      await fetch('/api/outreach', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId: lead.id, channel: 'linkedin' }),
+      });
+
+      // Mise à jour locale immédiate (pas de reload)
+      setCurrentLiStatus('connected');
+      setCurrentStatus('connected');
+    } finally {
+      setConnectBusy(false);
+    }
   }
 
   return (
@@ -143,20 +178,34 @@ export default function LeadRow({ lead }: Props) {
         <TemperatureBadge temperature={lead.temperature} />
       </td>
 
-      {/* LinkedIn */}
+      {/* LinkedIn — avec bouton 🤝 si connexion en attente d'acceptation */}
       <td className="px-4 py-3">
-        {lead.linkedin_url ? (
-          <a
-            href={lead.linkedin_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={`text-xs ${liStatus.className} hover:underline`}
-          >
-            {liStatus.label}
-          </a>
-        ) : (
-          <span className={`text-xs ${liStatus.className}`}>{liStatus.label}</span>
-        )}
+        <div className="flex flex-col gap-1">
+          {lead.linkedin_url ? (
+            <a
+              href={lead.linkedin_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`text-xs ${liStatus.className} hover:underline`}
+            >
+              {liStatus.label}
+            </a>
+          ) : (
+            <span className={`text-xs ${liStatus.className}`}>{liStatus.label}</span>
+          )}
+
+          {/* Bouton "Marquer connecté" — visible uniquement en connection_sent */}
+          {currentLiStatus === 'connection_sent' && (
+            <button
+              onClick={handleMarkConnected}
+              disabled={connectBusy}
+              title="Connexion acceptée sur LinkedIn ? Cliquer pour envoyer le message"
+              className="inline-flex items-center gap-1 px-2 py-0.5 bg-teal-100 hover:bg-teal-200 dark:bg-teal-900 dark:hover:bg-teal-800 text-teal-700 dark:text-teal-300 text-xs font-medium rounded-lg transition disabled:opacity-40 w-fit"
+            >
+              {connectBusy ? '⏳' : '🤝'} Connecté
+            </button>
+          )}
+        </div>
       </td>
 
       {/* Dernière action */}
