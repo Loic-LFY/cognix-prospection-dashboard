@@ -337,8 +337,8 @@ export function getStats() {
     { name: 'Nouveaux', status: 'new' },
     { name: 'Connexion envoyée', status: 'connection_sent' },
     { name: 'Connecté', status: 'connected' },
-    { name: 'En conversation', status: 'in_conversation' },
-    { name: 'RDV proposé', status: 'rdv_proposed' },
+    { name: 'En conversation', status: 'message_sent' },
+    { name: 'RDV proposé', status: 'rdv_planifie' },
     { name: 'Chaud 🔥', status: 'chaud' },
   ];
 
@@ -523,3 +523,4 @@ export function resetDailyActions(): Control {
     .run();
   return getControl();
 }
+
