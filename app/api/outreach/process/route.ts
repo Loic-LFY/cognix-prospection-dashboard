@@ -3,9 +3,14 @@ export const dynamic = 'force-dynamic';
  * POST /api/outreach/process
  * Traite la file d'attente de prise de contact.
  *
+ * Séquence LinkedIn complète :
+ *   1. Si linkedin_url absent → LinkedIn Profile URL Finder (Phantom search)
+ *   2. Si URL trouvée et non connecté → Auto Connect avec note personnalisée
+ *   3. Si URL trouvée et connecté → Message Sender
+ *
  * - Vérifie la plage horaire (09h-20h Paris) pour LinkedIn
- * - Envoie 1 action par appel (espacer les appels de quelques minutes)
- * - Met à jour le statut du lead après envoi
+ * - Traite 1 lead LinkedIn par appel (espacer les appels de quelques minutes)
+ * - Met à jour le statut du lead après chaque action
  *
  * À appeler via un cron Hermes ou manuellement depuis le dashboard.
  */
@@ -14,14 +19,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { checkApiKey } from '@/lib/auth';
 import { getQueuedLeads, markOutreachSent, updateLead } from '@/lib/db';
 import {
+  findLinkedInProfileUrl,
   sendLinkedInConnection,
   sendLinkedInMessage,
   isWithinOutreachWindow,
   nextOutreachWindow,
 } from '@/lib/phantombuster';
 import { sendEmail, isResendConfigured } from '@/lib/resend';
-
-const INTER_ACTION_DELAY_MIN = 3 * 60 * 1000; // 3 min entre actions LinkedIn
 
 export async function POST(req: NextRequest) {
   const authError = await checkApiKey(req);
@@ -41,17 +45,47 @@ export async function POST(req: NextRequest) {
 
   const linkedinLeads = getQueuedLeads('linkedin');
   for (const lead of linkedinLeads.slice(0, 1)) {
-    // On traite 1 lead LinkedIn par appel pour espacer naturellement
+    // ── Étape 1 : Recherche de l'URL LinkedIn si absente ──────────────────
     if (!lead.linkedin_url) {
-      results.push({
-        leadId: lead.id,
-        company: lead.company,
-        channel: 'linkedin',
-        result: 'skip: pas d\'URL LinkedIn',
-      });
-      continue;
+      const searchRes = await findLinkedInProfileUrl(
+        lead.contact_name ?? lead.company,
+        lead.company
+      );
+
+      if (searchRes.status === 'found' && searchRes.profileUrl) {
+        // URL trouvée → mise à jour du lead et on continue l'action
+        updateLead(lead.id, {
+          linkedin_url: searchRes.profileUrl,
+          linkedin_found: 1,
+          linkedin_status: 'url_found',
+        });
+        lead.linkedin_url = searchRes.profileUrl;
+      } else if (searchRes.status === 'skipped') {
+        // Phantom non configuré ou clé absente
+        results.push({
+          leadId: lead.id,
+          company: lead.company,
+          channel: 'linkedin',
+          result: `search_skipped: ${searchRes.message}`,
+        });
+        continue;
+      } else {
+        // not_found, error ou timeout
+        updateLead(lead.id, {
+          linkedin_found: 0,
+          linkedin_status: 'not_found',
+        });
+        results.push({
+          leadId: lead.id,
+          company: lead.company,
+          channel: 'linkedin',
+          result: `search_${searchRes.status}: ${searchRes.message}`,
+        });
+        continue;
+      }
     }
 
+    // ── Étape 2 : Connexion ou message selon l'état du lead ───────────────
     const isConnected = lead.linkedin_connected === 1;
 
     const res = isConnected
@@ -103,7 +137,6 @@ export async function POST(req: NextRequest) {
     }
   } else {
     for (const lead of emailLeads.slice(0, 3)) {
-      // On peut traiter plusieurs emails par appel (pas de risque de ban)
       if (!lead.email) {
         results.push({
           leadId: lead.id,
