@@ -4,20 +4,27 @@ export const dynamic = 'force-dynamic';
  * Traite la file d'attente de prise de contact.
  *
  * Séquence LinkedIn complète :
- *   1. Si linkedin_url absent → LinkedIn Profile URL Finder (Phantom search)
- *   2. Si URL trouvée et non connecté → Auto Connect avec note personnalisée
- *   3. Si URL trouvée et connecté → Message Sender
+ *   1. Vérifie que le moteur est ACTIF (pas en pause)
+ *   2. Vérifie la plage horaire 09h-20h Paris
+ *   3. Si linkedin_url absent → Profile URL Finder (Phantom search, polling 60s)
+ *   4. Si URL trouvée et non connecté → Auto Connect avec note
+ *   5. Si URL trouvée et connecté → Message Sender
  *
- * - Vérifie la plage horaire (09h-20h Paris) pour LinkedIn
  * - Traite 1 lead LinkedIn par appel (espacer les appels de quelques minutes)
- * - Met à jour le statut du lead après chaque action
+ * - Met à jour le statut + compteur daily_actions après chaque action
  *
  * À appeler via un cron Hermes ou manuellement depuis le dashboard.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { checkApiKey } from '@/lib/auth';
-import { getQueuedLeads, markOutreachSent, updateLead } from '@/lib/db';
+import {
+  getQueuedLeads,
+  markOutreachSent,
+  updateLead,
+  getControl,
+  incrementDailyActions,
+} from '@/lib/db';
 import {
   findLinkedInProfileUrl,
   sendLinkedInConnection,
@@ -32,6 +39,16 @@ export async function POST(req: NextRequest) {
   if (authError) return authError;
 
   const results: Array<{ leadId: string; company: string; channel: string; result: string }> = [];
+
+  // ─── Vérification statut moteur ───────────────────────────────────────────
+  const control = getControl();
+  if (control.status === 'paused') {
+    return NextResponse.json({
+      processed: 0,
+      skipped_reason: `Moteur en pause — ${control.pause_reason ?? 'arrêt manuel'}`,
+      paused_at: control.paused_at,
+    });
+  }
 
   // ─── LinkedIn ─────────────────────────────────────────────────────────────
   if (!isWithinOutreachWindow()) {
@@ -53,7 +70,6 @@ export async function POST(req: NextRequest) {
       );
 
       if (searchRes.status === 'found' && searchRes.profileUrl) {
-        // URL trouvée → mise à jour du lead et on continue l'action
         updateLead(lead.id, {
           linkedin_url: searchRes.profileUrl,
           linkedin_found: 1,
@@ -61,7 +77,6 @@ export async function POST(req: NextRequest) {
         });
         lead.linkedin_url = searchRes.profileUrl;
       } else if (searchRes.status === 'skipped') {
-        // Phantom non configuré ou clé absente
         results.push({
           leadId: lead.id,
           company: lead.company,
@@ -70,7 +85,6 @@ export async function POST(req: NextRequest) {
         });
         continue;
       } else {
-        // not_found, error ou timeout
         updateLead(lead.id, {
           linkedin_found: 0,
           linkedin_status: 'not_found',
@@ -100,6 +114,7 @@ export async function POST(req: NextRequest) {
 
     if (res.status === 'launched') {
       markOutreachSent(lead.id);
+      incrementDailyActions(1);
       updateLead(lead.id, {
         status: isConnected ? 'message_sent' : 'connection_sent',
         linkedin_status: isConnected ? 'message_sent' : 'connection_sent',
