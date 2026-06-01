@@ -1,7 +1,8 @@
 # Mode opératoire — Cognix Prospection Dashboard
 
-> Hermes / OpenClaw — Version 3.0 — Mai 2026
+> Hermes / OpenClaw — Version 4.0 — Juin 2026
 > Périmètre : Cognix Systems — Prospection Hosting / Infogérance Cloud
+> **Source de vérité : le code. Ce fichier est synchronisé avec le code source.**
 
 ---
 
@@ -16,7 +17,7 @@ Email entrant (AI_Cognix)
        ↓
  Déduplication par email   ← skip silencieux si déjà en base
        ↓
-  Score → Température
+  Température : toujours 'new' à la création
        ↓
   ┌─── VALIDATION MANUELLE ───┐
   │  ✅ Valider / 🗑️ Supprimer  │  ← aucune action sans ce passage
@@ -79,14 +80,11 @@ Tentative de mise en file d'attente sans `approved` → HTTP 403.
 
 ## 5. Qualification — Températures
 
-### Température initiale (score à l'import)
+### Température à la création
 
-| Score | Température | Comportement |
-|-------|-------------|--------------|
-| 8-10  | 🔥 `chaud`  | Séquence prioritaire |
-| 6-7   | 🌡 `tiede`  | Séquence standard |
-| 5     | ❄️ `froid`  | Attente |
-| < 5   | Rejeté      | Non importé |
+**La température est toujours `new` à la création**, quel que soit le score. Elle évolue ensuite via le pipeline LinkedIn.
+
+> ⚠️ L'ancienne logique score → température à l'import n'est pas implémentée dans le code.
 
 ### Évolution selon LinkedIn
 
@@ -105,22 +103,22 @@ Tentative de mise en file d'attente sans `approved` → HTTP 403.
 
 ### Prérequis
 - `qualification_status = approved`
-- `PHANTOMBUSTER_API_KEY` dans `~/openclaw/.env`
-- `PHANTOMBUSTER_AGENT_ID_CONNECTION` (phantom "LinkedIn Network Booster")
+- `PHANTOMBUSTER_API_KEY` (si absent → mode SIMULATION, aucun envoi réel)
+- `PHANTOMBUSTER_AGENT_ID_SEARCH` (phantom "LinkedIn Profile URL Finder")
+- `PHANTOMBUSTER_AGENT_ID_CONNECTION` (phantom "LinkedIn Auto Connect")
 - `PHANTOMBUSTER_AGENT_ID_MESSAGE` (phantom "LinkedIn Message Sender")
 
 ### Contraintes horaires
 - **Envois uniquement entre 09h00 et 20h00 heure de Paris**
-- Hors plage → action mise en attente jusqu'au lendemain 09h00
-- `/api/outreach/process` retourne `next_window` si hors plage
+- Hors plage → `/api/outreach/process` retourne `next_window` (lendemain 09h00)
 
-### Flux
+### Flux (implémenté dans `app/api/outreach/process/route.ts`)
 1. Lead validé → bouton "🚀 Mettre en file d'attente" (canal LinkedIn sélectionné)
 2. `POST /api/outreach` → `outreach_queued_at` renseigné
-3. `POST /api/outreach/process` (cron ou manuel) :
-   - Si `linkedin_connected = 0` → lance phantom "Network Booster" (demande de connexion)
-   - Si `linkedin_connected = 1` → lance phantom "Message Sender" (message)
-   - 1 action LinkedIn par appel (espacement naturel)
+3. `POST /api/outreach/process` (cron ou manuel) — **1 lead LinkedIn par appel** :
+   - **Étape 1** : si `linkedin_url` absent → lance phantom SEARCH ("LinkedIn Profile URL Finder") avec `nom + société`, polling 60s (12 × 5s)
+   - **Étape 2** : si URL trouvée et `linkedin_connected = 0` → lance phantom CONNECTION (demande de mise en relation)
+   - **Étape 3** : si URL trouvée et `linkedin_connected = 1` → lance phantom MESSAGE
 
 ### Limites anti-ban
 - Max 15 connexions/jour
@@ -133,7 +131,7 @@ Tentative de mise en file d'attente sans `approved` → HTTP 403.
 
 ### Prérequis
 - `qualification_status = approved`
-- `RESEND_API_KEY` dans `~/openclaw/.env`
+- `RESEND_API_KEY` (si absent → canal email désactivé silencieusement)
 - Expéditeur : `loic.fretay@cognix-systems.com`
 
 ### Activation
@@ -141,13 +139,17 @@ Dans la fiche lead, toggle "📧 Email" (affiché en grisé si `RESEND_API_KEY` 
 
 Un avertissement s'affiche si la clé est manquante.
 
+### Flux
+- `POST /api/outreach/process` traite jusqu'à **3 leads email par appel**
+- Skip silencieux si `RESEND_API_KEY` absente
+
 ### Tracking d'ouverture
 **Désactivé intentionnellement** tant que l'entrée DNS entreprise n'est pas configurée.
 
 Pour activer :
 1. Créer le domaine `cognix-systems.com` dans le dashboard Resend
 2. Ajouter l'entrée DNS SPF/DKIM fournie par Resend
-3. Ajouter `RESEND_TRACKING_ENABLED=true` dans `~/openclaw/.env`
+3. Ajouter `RESEND_TRACKING_ENABLED=true` dans le docker-compose
 
 Le code est en place (feature flag), aucun changement de code nécessaire.
 
@@ -159,8 +161,6 @@ Configuration Resend (une fois DNS prêt) :
 2. URL : `https://cognix.7solutionsweb.com/api/webhooks/resend`
 3. Événements : `email.opened`
 4. Copier le secret dans `RESEND_WEBHOOK_SECRET`
-
-Le champ `email_opened` (0/1) et `email_opened_at` sont mis à jour automatiquement.
 
 ---
 
@@ -184,20 +184,24 @@ Route interne : `GET /api/phantombuster/usage`.
 
 ## 9. Séquence LinkedIn complète
 
-### LK-0 - Recherche profil
-Via SearXNG. Si trouvé : `linkedin_found = 1`, `linkedin_url` renseigné.
+### LK-0 - Recherche profil (PhantomBuster)
+Via phantom **"LinkedIn Profile URL Finder"** (`PHANTOMBUSTER_AGENT_ID_SEARCH`).
+- Argument : `{ queries: ["Prénom NOM Société"], numberOfResultsPerSearch: 1 }`
+- Polling max 60s (12 tentatives × 5s)
+- Si trouvé : `linkedin_found = 1`, `linkedin_url` renseigné, `linkedin_status = found`
+- Si non trouvé : `linkedin_status = not_found`, lead ignoré ce cycle
 
-### LK-1 - Demande de connexion (PhantomBuster)
-Déclenchée après validation + mise en file d'attente (canal LinkedIn).
+### LK-1 - Demande de connexion (phantom "LinkedIn Auto Connect")
+Déclenchée si `linkedin_url` présente et `linkedin_connected = 0`.
 
-*Profil digital/web/marketing :*
-> Bonjour [Prénom], je développe un réseau d'experts du digital et recherche des partenaires en développement web afin de créer des synergies d'affaires. Seriez-vous ouvert à une mise en relation ?
+Note envoyée :
+> Bonjour [Prénom], je souhaite rejoindre votre réseau dans le cadre de nos services d'hébergement et infogérance. Loïc Fretay - Cognix Systems
 
-*Profil non-digital :*
-> Bonjour [Prénom], je travaille avec des dirigeants sur des projets d'infrastructure numérique et de performance web. Je serais ravi d'élargir mon réseau dans votre secteur.
+### LK-2 - Connexion acceptée → 1er message (phantom "LinkedIn Message Sender")
+Déclenché si `linkedin_connected = 1`. Température → `tiede`.
 
-### LK-2 - Connexion acceptée → 1er message
-Déclenché dans les 30 min-2h. Température → `tiede`.
+Message envoyé :
+> Bonjour [Prénom], nous accompagnons des entreprises comme [Société] dans leur hébergement et infogérance. Seriez-vous disponible pour un échange rapide ? Cordialement, Loïc Fretay - Cognix Systems
 
 ### LK-3/4 - Conversation (2-3 échanges)
 - Réponse positive : `linkedin_engagement = replied` puis `warm`
@@ -276,7 +280,7 @@ Sans réponse : `email_outreach_status = not_sent` + ban list 90 jours
 | `email_outreach_status` | TEXT | `pending` | `pending` / `sent` / `opened` / `not_sent` |
 | `email_opened` | INTEGER | 0 | 1 si email ouvert (webhook Resend) |
 | `email_opened_at` | TEXT | NULL | Date ouverture |
-| `linkedin_conv_step` | INTEGER | 0 | Étape conversation LinkedIn (0-4) |
+| `linkedin_conv_step` | INTEGER | 0 | Etape conversation LinkedIn (0-4) |
 | `linkedin_engagement` | TEXT | `none` | `none` / `connected` / `replied` / `warm` / `rdv_proposed` |
 | `linkedin_last_reply_at` | TEXT | NULL | Dernière réponse LinkedIn |
 | `linkedin_rdv_proposed` | INTEGER | 0 | 0/1 |
@@ -285,31 +289,45 @@ Sans réponse : `email_outreach_status = not_sent` + ban list 90 jours
 
 ## 13. Variables d'environnement
 
-### Sur le VPS (`docker-compose.yml` → `.env.local`)
+### Architecture
+
+Toutes les variables (sauf `DATABASE_URL`) sont injectées via le **`docker-compose.yml`** côté VPS, pas via `.env.local`.
+
+`.env.local` contient uniquement :
 ```
 DATABASE_URL=/data/leads.db
+```
+
+### Variables docker-compose (runtime)
+
+```
+# Auth dashboard navigateur
+DASHBOARD_PASSWORD=***
+
+# Auth API machine-to-machine (Hermes)
 API_KEY=***
-```
 
-### Côté Hermes (`~/openclaw/.env`)
-```
-# Dashboard
-DASHBOARD_API_URL=https://cognix.7solutionsweb.com
-DASHBOARD_API_KEY=***
+# PhantomBuster — si absent : mode SIMULATION automatique
+PHANTOMBUSTER_API_KEY=
+PHANTOMBUSTER_AGENT_ID_SEARCH=       # phantom "LinkedIn Profile URL Finder"
+PHANTOMBUSTER_AGENT_ID_CONNECTION=   # phantom "LinkedIn Auto Connect"
+PHANTOMBUSTER_AGENT_ID_MESSAGE=      # phantom "LinkedIn Message Sender"
 
-# LinkedIn outreach (PhantomBuster)
-PHANTOMBUSTER_API_KEY=***
-PHANTOMBUSTER_AGENT_ID_CONNECTION=***   # phantom "LinkedIn Network Booster"
-PHANTOMBUSTER_AGENT_ID_MESSAGE=***      # phantom "LinkedIn Message Sender"
-
-# Canal email (Resend) — optionnel
-RESEND_API_KEY=                         # laisser vide pour désactiver
-RESEND_WEBHOOK_SECRET=                  # secret HMAC webhook
-RESEND_TRACKING_ENABLED=false           # true seulement après config DNS
+# Resend (canal email — optionnel)
+RESEND_API_KEY=
+RESEND_WEBHOOK_SECRET=               # secret HMAC webhook
+RESEND_TRACKING_ENABLED=false        # true seulement après config DNS
 
 # Divers
-CRM_URL=
 CALENDLY_URL=https://calendly.com/loic-fretay-cognix-systems/45min
+CRM_URL=
+```
+
+### Variables côté Hermes (`~/openclaw/.env` ou env du container OpenClaw)
+
+```
+DASHBOARD_API_URL=https://cognix.7solutionsweb.com
+DASHBOARD_API_KEY=***   # = API_KEY du docker-compose
 ```
 
 > Mode SIMULATION actif tant que `PHANTOMBUSTER_API_KEY` est absent. Aucun envoi LinkedIn réel.
@@ -342,7 +360,7 @@ CALENDLY_URL=https://calendly.com/loic-fretay-cognix-systems/45min
 
 ## 16. Notifications automatiques
 
-### Récap quotidien (18h00 Paris)
+### Recap quotidien (18h00 Paris)
 ```
 Cognix Prospection — Bilan du JJ/MM
 
@@ -368,4 +386,4 @@ Quota PhantomBuster : Xh / 20h (X%)
 
 *Repo GitHub : [Loic-LFY/cognix-prospection-dashboard](https://github.com/Loic-LFY/cognix-prospection-dashboard)*
 *Dashboard : https://cognix.7solutionsweb.com*
-*Version : 3.0 — Mai 2026*
+*Version : 4.0 — Juin 2026*
