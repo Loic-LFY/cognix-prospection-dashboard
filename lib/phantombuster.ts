@@ -213,24 +213,27 @@ export async function findLinkedInProfileUrl(
       return { profileUrl: null, status: 'error', message: 'Le Phantom a retourné une erreur' };
     }
 
-    // Récupérer le résultat — /fetch-result-object retourne DIRECTEMENT le JSON du résultat
-    const resultRes = await fetch(
-      `${PHANTOMBUSTER_BASE}/containers/fetch-result-object?id=${containerId}`,
+    // Le Phantom Profile URL Finder sauvegarde dans un fichier CSV, pas dans resultObject.
+    // On lit les logs du container pour extraire l'URL LinkedIn trouvée.
+    const outputRes = await fetch(
+      `${PHANTOMBUSTER_BASE}/containers/fetch-output?id=${containerId}`,
       { headers: { 'X-Phantombuster-Key': apiKey } }
     );
 
-    if (!resultRes.ok) {
-      return { profileUrl: null, status: 'not_found', message: 'Résultat indisponible après exécution' };
+    if (!outputRes.ok) {
+      return { profileUrl: null, status: 'not_found', message: 'Logs du container indisponibles' };
     }
 
-    const output = await resultRes.json();
+    const outputData = await outputRes.json();
+    // Les logs sont dans output.output (string) ou directement en string
+    const logs: string = typeof outputData === 'string'
+      ? outputData
+      : (outputData.output ?? outputData.text ?? JSON.stringify(outputData));
 
-    if (Array.isArray(output) && output.length > 0) {
-      const profileUrl: string | undefined =
-        output[0].profileUrl ?? output[0].linkedinUrl ?? output[0].url;
-      if (profileUrl) {
-        return { profileUrl, status: 'found' };
-      }
+    // Extraire l'URL LinkedIn depuis "Got https://linkedin.com/in/..." dans les logs
+    const match = logs.match(/Got (https?:\/\/(?:www\.)?linkedin\.com\/in\/[^\s"\n]+)/);
+    if (match?.[1]) {
+      return { profileUrl: match[1].trim(), status: 'found' };
     }
 
     return {
