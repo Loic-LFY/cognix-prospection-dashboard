@@ -1,16 +1,20 @@
 /**
  * PhantomBuster client pour LinkedIn outreach automatisé.
  *
- * Phantoms à configurer côté PhantomBuster :
- *  - "LinkedIn Profile URL Finder"  → trouver l'URL LinkedIn depuis nom + société
- *  - "LinkedIn Auto Connect"        → demandes de mise en relation avec note
- *  - "LinkedIn Message Sender"      → messages aux connexions existantes
+ * Phantoms configurés côté PB :
+ *  - "Cognix - Profile URL Finder"  (SEARCH)     → scriptId 4015
+ *  - "Cognix - Auto Connect"        (CONNECTION)  → scriptId 2818
+ *  - "Cognix - Message Sender"      (MESSAGE)     → scriptId 9227
  *
  * Variables d'env requises :
  *  - PHANTOMBUSTER_API_KEY
- *  - PHANTOMBUSTER_AGENT_ID_SEARCH     (LinkedIn Profile URL Finder)
- *  - PHANTOMBUSTER_AGENT_ID_CONNECTION (LinkedIn Auto Connect)
- *  - PHANTOMBUSTER_AGENT_ID_MESSAGE    (LinkedIn Message Sender)
+ *  - PHANTOMBUSTER_AGENT_ID_SEARCH
+ *  - PHANTOMBUSTER_AGENT_ID_CONNECTION
+ *  - PHANTOMBUSTER_AGENT_ID_MESSAGE
+ *
+ * IMPORTANT : Les Phantoms CONNECTION et MESSAGE utilisent sessionCookie + userAgent
+ * stockés dans leur configuration PB. On récupère toujours la config actuelle avant
+ * de lancer pour ne jamais écraser ces champs sensibles.
  */
 
 const PHANTOMBUSTER_BASE = 'https://api.phantombuster.com/api/v2';
@@ -23,6 +27,23 @@ export interface PhantomLaunchResult {
 
 function getApiKey(): string | null {
   return process.env.PHANTOMBUSTER_API_KEY ?? null;
+}
+
+/**
+ * Récupère l'argument JSON actuel d'un agent PB.
+ * Permet de merger les champs sensibles (sessionCookie, userAgent) sans les écraser.
+ */
+async function fetchAgentArgument(agentId: string, apiKey: string): Promise<Record<string, unknown>> {
+  try {
+    const res = await fetch(`${PHANTOMBUSTER_BASE}/agents/fetch?id=${agentId}`, {
+      headers: { 'X-Phantombuster-Key': apiKey },
+    });
+    if (!res.ok) return {};
+    const data = await res.json();
+    return JSON.parse(data.argument || '{}');
+  } catch {
+    return {};
+  }
 }
 
 /**
@@ -75,12 +96,7 @@ export function nextOutreachWindow(): Date {
 // ─── Helpers polling ─────────────────────────────────────────────────────────
 
 /**
- * Attend la fin d'un container PB (polling /containers/fetch).
- * Retourne le statut final ('finished' | 'error' | 'timeout') et le containerId.
- *
- * NOTE : /containers/fetch-result-object retourne DIRECTEMENT l'objet résultat (pas de wrapper),
- * ou null si pas encore disponible. Il ne contient PAS de champ status/exitCode.
- * Pour le statut, il faut utiliser /containers/fetch.
+ * Attend la fin d'un container PB via /containers/fetch (polling statut).
  */
 async function waitForContainer(
   containerId: string,
@@ -104,7 +120,6 @@ async function waitForContainer(
     const status: string = data.status ?? '';
     if (status === 'finished') return 'finished';
     if (status === 'error' || status === 'crashed') return 'error';
-    // status 'running' | 'starting' → continuer à attendre
   }
   return 'timeout';
 }
@@ -118,11 +133,14 @@ export interface ProfileSearchResult {
 }
 
 /**
- * Lance LinkedIn Profile URL Finder pour trouver l'URL d'un profil LinkedIn
- * depuis un nom complet + société (Sales Navigator Core compatible).
+ * Lance "Cognix - Profile URL Finder" pour trouver l'URL LinkedIn d'un lead.
  *
- * Polling max 60s (12 × 5s) via /containers/fetch pour le statut,
- * puis /containers/fetch-result-object pour le résultat.
+ * Ce Phantom attend une Google Sheet avec colonnes firstName, lastName, companyName.
+ * On passe les données du lead directement dans l'argument en overridant spreadsheetUrl
+ * avec les champs firstName/lastName/companyName si le Phantom le supporte,
+ * sinon on retourne skipped (URL à renseigner manuellement).
+ *
+ * Polling via /containers/fetch + résultat via /containers/fetch-result-object.
  */
 export async function findLinkedInProfileUrl(
   fullName: string,
@@ -138,8 +156,25 @@ export async function findLinkedInProfileUrl(
     return { profileUrl: null, status: 'skipped', message: 'PHANTOMBUSTER_AGENT_ID_SEARCH non configuré' };
   }
 
+  // Splitter le nom complet en prénom / nom
+  const parts = fullName.trim().split(' ');
+  const firstName = parts[0] ?? '';
+  const lastName = parts.slice(1).join(' ') || company;
+
   try {
-    // Lancer le Phantom avec la query "Prénom NOM Société"
+    // Récupérer la config actuelle pour merger (market, csvName, etc.)
+    const currentArg = await fetchAgentArgument(agentId, apiKey);
+
+    // Passer les données du lead directement dans l'argument
+    const newArg = {
+      ...currentArg,
+      spreadsheetUrl: '',           // vider l'URL spreadsheet
+      firstName,
+      lastName,
+      companyName: company,
+      numberOfResultsPerSearch: 1,
+    };
+
     const launchRes = await fetch(`${PHANTOMBUSTER_BASE}/agents/launch`, {
       method: 'POST',
       headers: {
@@ -148,10 +183,7 @@ export async function findLinkedInProfileUrl(
       },
       body: JSON.stringify({
         id: agentId,
-        argument: JSON.stringify({
-          queries: [`${fullName} ${company}`],
-          numberOfResultsPerSearch: 1,
-        }),
+        argument: JSON.stringify(newArg),
       }),
     });
 
@@ -160,7 +192,7 @@ export async function findLinkedInProfileUrl(
       return {
         profileUrl: null,
         status: 'error',
-        message: err.error ?? `HTTP ${launchRes.status}`,
+        message: (err as Record<string, string>).error ?? `HTTP ${launchRes.status}`,
       };
     }
 
@@ -170,41 +202,26 @@ export async function findLinkedInProfileUrl(
       return { profileUrl: null, status: 'error', message: 'containerId absent de la réponse PhantomBuster' };
     }
 
-    // Attendre la fin via /containers/fetch (statut)
+    // Attendre la fin via /containers/fetch
     const finalStatus = await waitForContainer(containerId, apiKey);
 
     if (finalStatus === 'timeout') {
-      return {
-        profileUrl: null,
-        status: 'timeout',
-        message: 'Timeout 60s — PhantomBuster trop lent, réessayer plus tard',
-      };
+      return { profileUrl: null, status: 'timeout', message: 'Timeout 60s — réessayer plus tard' };
     }
-
     if (finalStatus === 'error') {
-      return {
-        profileUrl: null,
-        status: 'error',
-        message: 'Le Phantom a retourné une erreur',
-      };
+      return { profileUrl: null, status: 'error', message: 'Le Phantom a retourné une erreur' };
     }
 
-    // Récupérer le résultat via /containers/fetch-result-object
-    // NOTE : cet endpoint retourne DIRECTEMENT le JSON du résultat (pas de wrapper { resultObject: ... })
+    // Récupérer le résultat — /fetch-result-object retourne DIRECTEMENT le JSON du résultat
     const resultRes = await fetch(
       `${PHANTOMBUSTER_BASE}/containers/fetch-result-object?id=${containerId}`,
       { headers: { 'X-Phantombuster-Key': apiKey } }
     );
 
     if (!resultRes.ok) {
-      return {
-        profileUrl: null,
-        status: 'not_found',
-        message: 'Résultat indisponible après exécution',
-      };
+      return { profileUrl: null, status: 'not_found', message: 'Résultat indisponible après exécution' };
     }
 
-    // Le résultat EST directement le tableau retourné par le Phantom
     const output = await resultRes.json();
 
     if (Array.isArray(output) && output.length > 0) {
@@ -218,7 +235,7 @@ export async function findLinkedInProfileUrl(
     return {
       profileUrl: null,
       status: 'not_found',
-      message: 'Profil introuvable — ajout manuel requis',
+      message: 'Profil introuvable — URL LinkedIn à renseigner manuellement',
     };
   } catch (e) {
     return { profileUrl: null, status: 'error', message: String(e) };
@@ -228,8 +245,10 @@ export async function findLinkedInProfileUrl(
 // ─── Connexion LinkedIn ───────────────────────────────────────────────────────
 
 /**
- * Lance un agent PhantomBuster pour envoyer une demande de connexion LinkedIn.
- * Retourne immédiatement après le launch (pas de polling — action asynchrone côté PB).
+ * Lance "Cognix - Auto Connect" pour envoyer une demande de connexion LinkedIn.
+ *
+ * Récupère la config actuelle du Phantom (sessionCookie, userAgent, etc.)
+ * et merge avec l'URL du profil cible (spreadsheetUrl = URL profil LinkedIn).
  */
 export async function sendLinkedInConnection(
   linkedinUrl: string,
@@ -254,6 +273,16 @@ export async function sendLinkedInConnection(
   }
 
   try {
+    // Récupérer la config actuelle pour garder sessionCookie, userAgent, etc.
+    const currentArg = await fetchAgentArgument(agentId, apiKey);
+
+    const newArg = {
+      ...currentArg,
+      spreadsheetUrl: linkedinUrl,      // URL du profil LinkedIn cible
+      numberOfAddsPerLaunch: 1,          // 1 seul par appel
+      message: message ?? (currentArg.message as string ?? ''),
+    };
+
     const res = await fetch(`${PHANTOMBUSTER_BASE}/agents/launch`, {
       method: 'POST',
       headers: {
@@ -262,18 +291,15 @@ export async function sendLinkedInConnection(
       },
       body: JSON.stringify({
         id: agentId,
-        argument: JSON.stringify({
-          profileUrl: linkedinUrl,
-          message: message ?? '',
-        }),
+        argument: JSON.stringify(newArg),
       }),
     });
 
     const data = await res.json();
     if (!res.ok) {
-      return { containerId: '', status: 'error', message: data.error ?? JSON.stringify(data) };
+      return { containerId: '', status: 'error', message: (data as Record<string, string>).error ?? JSON.stringify(data) };
     }
-    return { containerId: data.containerId ?? '', status: 'launched' };
+    return { containerId: (data as Record<string, string>).containerId ?? '', status: 'launched' };
   } catch (e) {
     return { containerId: '', status: 'error', message: String(e) };
   }
@@ -282,8 +308,10 @@ export async function sendLinkedInConnection(
 // ─── Message LinkedIn ─────────────────────────────────────────────────────────
 
 /**
- * Lance un agent PhantomBuster pour envoyer un message LinkedIn (connexion existante).
- * Retourne immédiatement après le launch (pas de polling — action asynchrone côté PB).
+ * Lance "Cognix - Message Sender" pour envoyer un message LinkedIn.
+ *
+ * Récupère la config actuelle du Phantom (sessionCookie, userAgent, etc.)
+ * et merge avec l'URL du profil cible (spreadsheetUrl = URL profil LinkedIn).
  */
 export async function sendLinkedInMessage(
   linkedinUrl: string,
@@ -308,6 +336,16 @@ export async function sendLinkedInMessage(
   }
 
   try {
+    // Récupérer la config actuelle pour garder sessionCookie, userAgent, etc.
+    const currentArg = await fetchAgentArgument(agentId, apiKey);
+
+    const newArg = {
+      ...currentArg,
+      spreadsheetUrl: linkedinUrl,   // URL du profil LinkedIn cible
+      profilesPerLaunch: 1,           // 1 seul par appel
+      message,
+    };
+
     const res = await fetch(`${PHANTOMBUSTER_BASE}/agents/launch`, {
       method: 'POST',
       headers: {
@@ -316,18 +354,15 @@ export async function sendLinkedInMessage(
       },
       body: JSON.stringify({
         id: agentId,
-        argument: JSON.stringify({
-          profileUrl: linkedinUrl,
-          message,
-        }),
+        argument: JSON.stringify(newArg),
       }),
     });
 
     const data = await res.json();
     if (!res.ok) {
-      return { containerId: '', status: 'error', message: data.error ?? JSON.stringify(data) };
+      return { containerId: '', status: 'error', message: (data as Record<string, string>).error ?? JSON.stringify(data) };
     }
-    return { containerId: data.containerId ?? '', status: 'launched' };
+    return { containerId: (data as Record<string, string>).containerId ?? '', status: 'launched' };
   } catch (e) {
     return { containerId: '', status: 'error', message: String(e) };
   }
@@ -336,25 +371,15 @@ export async function sendLinkedInMessage(
 // ─── Usage / quota ────────────────────────────────────────────────────────────
 
 export interface PhantombusterUsage {
-  /** Temps d'exécution mensuel consommé, en secondes */
   monthlyExecutionTime: number;
-  /** Quota mensuel du plan, en secondes (-1 = non renseigné) */
   planMonthlyLimit: number;
-  /** Nom du forfait (ex: "Start", "Growth") */
   planName: string;
-  /** Pourcentage consommé (0-100+) */
   percentUsed: number;
-  /** true si API key absente */
   notConfigured?: boolean;
-  /** Message d'erreur éventuel */
   error?: string;
 }
 
-/**
- * Forfait Start PhantomBuster : 20h/mois = 72 000 secondes.
- * Fallback si l'API ne retourne pas la limite.
- */
-const START_PLAN_LIMIT_SECONDS = 20 * 3600; // 72 000
+const START_PLAN_LIMIT_SECONDS = 20 * 3600;
 
 export async function fetchPhantombusterUsage(): Promise<PhantombusterUsage> {
   const apiKey = getApiKey();
@@ -381,18 +406,20 @@ export async function fetchPhantombusterUsage(): Promise<PhantombusterUsage> {
         planMonthlyLimit: START_PLAN_LIMIT_SECONDS,
         planName: 'Start',
         percentUsed: 0,
-        error: data.error ?? `HTTP ${res.status}`,
+        error: (data as Record<string, string>).error ?? `HTTP ${res.status}`,
       };
     }
 
     const data = await res.json();
-
-    const used: number = data.monthlyExecutionTime ?? 0;
+    const used: number = (data as Record<string, number>).monthlyExecutionTime ?? 0;
     const planLimit: number =
-      data.plan?.maxMonthlyExecutionTime ??
-      data.plan?.monthlyExecutionTime ??
+      (data as Record<string, Record<string, number>>).plan?.maxMonthlyExecutionTime ??
+      (data as Record<string, Record<string, number>>).plan?.monthlyExecutionTime ??
       START_PLAN_LIMIT_SECONDS;
-    const planName: string = data.planName ?? data.plan?.name ?? 'Start';
+    const planName: string =
+      (data as Record<string, string>).planName ??
+      (data as Record<string, Record<string, string>>).plan?.name ??
+      'Start';
     const percentUsed = planLimit > 0 ? Math.round((used / planLimit) * 100) : 0;
 
     return { monthlyExecutionTime: used, planMonthlyLimit: planLimit, planName, percentUsed };
