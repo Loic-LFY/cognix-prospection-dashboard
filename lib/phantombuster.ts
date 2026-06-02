@@ -72,6 +72,43 @@ export function nextOutreachWindow(): Date {
   return now;
 }
 
+// ─── Helpers polling ─────────────────────────────────────────────────────────
+
+/**
+ * Attend la fin d'un container PB (polling /containers/fetch).
+ * Retourne le statut final ('finished' | 'error' | 'timeout') et le containerId.
+ *
+ * NOTE : /containers/fetch-result-object retourne DIRECTEMENT l'objet résultat (pas de wrapper),
+ * ou null si pas encore disponible. Il ne contient PAS de champ status/exitCode.
+ * Pour le statut, il faut utiliser /containers/fetch.
+ */
+async function waitForContainer(
+  containerId: string,
+  apiKey: string,
+  maxAttempts = 12,
+  intervalMs = 5000
+): Promise<'finished' | 'error' | 'timeout'> {
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+
+    const res = await fetch(
+      `${PHANTOMBUSTER_BASE}/containers/fetch?id=${containerId}`,
+      { headers: { 'X-Phantombuster-Key': apiKey } }
+    ).catch(() => null);
+
+    if (!res || !res.ok) continue;
+
+    const data = await res.json().catch(() => null);
+    if (!data) continue;
+
+    const status: string = data.status ?? '';
+    if (status === 'finished') return 'finished';
+    if (status === 'error' || status === 'crashed') return 'error';
+    // status 'running' | 'starting' → continuer à attendre
+  }
+  return 'timeout';
+}
+
 // ─── Recherche de profil ──────────────────────────────────────────────────────
 
 export interface ProfileSearchResult {
@@ -84,7 +121,8 @@ export interface ProfileSearchResult {
  * Lance LinkedIn Profile URL Finder pour trouver l'URL d'un profil LinkedIn
  * depuis un nom complet + société (Sales Navigator Core compatible).
  *
- * Polling max 60s (12 × 5s). Retourne l'URL ou null si non trouvé.
+ * Polling max 60s (12 × 5s) via /containers/fetch pour le statut,
+ * puis /containers/fetch-result-object pour le résultat.
  */
 export async function findLinkedInProfileUrl(
   fullName: string,
@@ -131,46 +169,55 @@ export async function findLinkedInProfileUrl(
       return { profileUrl: null, status: 'error', message: 'containerId absent de la réponse PhantomBuster' };
     }
 
-    // Polling du résultat — max 12 tentatives × 5s = 60s
-    for (let i = 0; i < 12; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 5000));
+    // Attendre la fin via /containers/fetch (statut)
+    const finalStatus = await waitForContainer(containerId, apiKey);
 
-      const resultRes = await fetch(
-        `${PHANTOMBUSTER_BASE}/containers/fetch-result-object?id=${containerId}`,
-        { headers: { 'X-Phantombuster-Key': apiKey } }
-      );
+    if (finalStatus === 'timeout') {
+      return {
+        profileUrl: null,
+        status: 'timeout',
+        message: 'Timeout 60s — PhantomBuster trop lent, réessayer plus tard',
+      };
+    }
 
-      if (!resultRes.ok) continue;
+    if (finalStatus === 'error') {
+      return {
+        profileUrl: null,
+        status: 'error',
+        message: 'Le Phantom a retourné une erreur',
+      };
+    }
 
-      const data = await resultRes.json();
-      const done =
-        data.status === 'finished' ||
-        data.exitCode !== undefined ||
-        data.status === 'error';
+    // Récupérer le résultat via /containers/fetch-result-object
+    // NOTE : cet endpoint retourne DIRECTEMENT le JSON du résultat (pas de wrapper { resultObject: ... })
+    const resultRes = await fetch(
+      `${PHANTOMBUSTER_BASE}/containers/fetch-result-object?id=${containerId}`,
+      { headers: { 'X-Phantombuster-Key': apiKey } }
+    );
 
-      if (!done) continue;
-
-      // Parser le résultat — Profile URL Finder retourne un tableau
-      const output = data.resultObject;
-      if (Array.isArray(output) && output.length > 0) {
-        const profileUrl: string | undefined =
-          output[0].profileUrl ?? output[0].linkedinUrl ?? output[0].url;
-        if (profileUrl) {
-          return { profileUrl, status: 'found' };
-        }
-      }
-
+    if (!resultRes.ok) {
       return {
         profileUrl: null,
         status: 'not_found',
-        message: 'Profil introuvable — ajout manuel requis',
+        message: 'Résultat indisponible après exécution',
       };
+    }
+
+    // Le résultat EST directement le tableau retourné par le Phantom
+    const output = await resultRes.json();
+
+    if (Array.isArray(output) && output.length > 0) {
+      const profileUrl: string | undefined =
+        output[0].profileUrl ?? output[0].linkedinUrl ?? output[0].url;
+      if (profileUrl) {
+        return { profileUrl, status: 'found' };
+      }
     }
 
     return {
       profileUrl: null,
-      status: 'timeout',
-      message: 'Timeout 60s — PhantomBuster trop lent, réessayer plus tard',
+      status: 'not_found',
+      message: 'Profil introuvable — ajout manuel requis',
     };
   } catch (e) {
     return { profileUrl: null, status: 'error', message: String(e) };
@@ -181,6 +228,7 @@ export async function findLinkedInProfileUrl(
 
 /**
  * Lance un agent PhantomBuster pour envoyer une demande de connexion LinkedIn.
+ * Retourne immédiatement après le launch (pas de polling — action asynchrone côté PB).
  */
 export async function sendLinkedInConnection(
   linkedinUrl: string,
@@ -233,6 +281,7 @@ export async function sendLinkedInConnection(
 
 /**
  * Lance un agent PhantomBuster pour envoyer un message LinkedIn (connexion existante).
+ * Retourne immédiatement après le launch (pas de polling — action asynchrone côté PB).
  */
 export async function sendLinkedInMessage(
   linkedinUrl: string,
