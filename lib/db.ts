@@ -487,9 +487,8 @@ export function getQueuedLeads(channel: OutreachChannel): Lead[] {
       `SELECT * FROM leads
        WHERE qualification_status = 'approved'
          AND outreach_channel = ?
-         AND outreach_queued_at IS NOT NULL
          AND outreach_sent_at IS NULL
-       ORDER BY outreach_queued_at ASC`
+       ORDER BY outreach_queued_at ASC, created_at ASC`
     )
     .all(channel) as Lead[];
 }
@@ -523,4 +522,3 @@ export function resetDailyActions(): Control {
     .run();
   return getControl();
 }
-
