@@ -160,12 +160,11 @@ export async function findLinkedInProfileUrl(
     // Récupérer la config actuelle pour merger (market, csvName, etc.)
     const currentArg = await fetchAgentArgument(agentId, apiKey);
 
-    // Construire l'URL CSV depuis notre propre dashboard.
-    // Le Phantom "Profile URL Finder" lit ce CSV (colonnes: firstName, lastName, companyName)
-    // plutôt qu'une Google Sheet — évite toute dépendance externe.
-    const dashboardUrl = process.env.DASHBOARD_API_URL ?? '';
+    // URL CSV interne : le serveur s'appelle lui-même via localhost.
+    // Evite toute dépendance sur DASHBOARD_API_URL (variable externe non dispo côté serveur).
     const csvToken = process.env.CSV_EXPORT_TOKEN ?? process.env.API_KEY ?? '';
-    const csvUrl = `${dashboardUrl}/api/leads/pending-csv?token=${csvToken}`;
+    const internalPort = process.env.PORT ?? '3000';
+    const csvUrl = `http://localhost:${internalPort}/api/leads/pending-csv?token=${csvToken}`;
 
     const newArg = {
       ...currentArg,
