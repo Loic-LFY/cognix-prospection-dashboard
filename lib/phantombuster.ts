@@ -170,6 +170,10 @@ export async function findLinkedInProfileUrl(
       ...currentArg,
       spreadsheetUrl: csvUrl,
       numberOfLinesPerLaunch: 1,
+      // Noms des colonnes dans le CSV (requis par le Phantom)
+      firstNameColumnName: 'firstName',
+      lastNameColumnName: 'lastName',
+      companyNameColumnName: 'companyName',
     };
 
     const launchRes = await fetch(`${PHANTOMBUSTER_BASE}/agents/launch`, {
