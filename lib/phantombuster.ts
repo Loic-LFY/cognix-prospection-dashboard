@@ -140,13 +140,14 @@ export async function findLinkedInProfileUrl(
 
   try {
     // Lancer le Phantom avec la query "Prénom NOM Société"
-    const launchRes = await fetch(`${PHANTOMBUSTER_BASE}/agent/${agentId}/launch`, {
+    const launchRes = await fetch(`${PHANTOMBUSTER_BASE}/agents/launch`, {
       method: 'POST',
       headers: {
         'X-Phantombuster-Key': apiKey,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        id: agentId,
         argument: JSON.stringify({
           queries: [`${fullName} ${company}`],
           numberOfResultsPerSearch: 1,
@@ -253,13 +254,14 @@ export async function sendLinkedInConnection(
   }
 
   try {
-    const res = await fetch(`${PHANTOMBUSTER_BASE}/agent/${agentId}/launch`, {
+    const res = await fetch(`${PHANTOMBUSTER_BASE}/agents/launch`, {
       method: 'POST',
       headers: {
         'X-Phantombuster-Key': apiKey,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        id: agentId,
         argument: JSON.stringify({
           profileUrl: linkedinUrl,
           message: message ?? '',
@@ -306,13 +308,14 @@ export async function sendLinkedInMessage(
   }
 
   try {
-    const res = await fetch(`${PHANTOMBUSTER_BASE}/agent/${agentId}/launch`, {
+    const res = await fetch(`${PHANTOMBUSTER_BASE}/agents/launch`, {
       method: 'POST',
       headers: {
         'X-Phantombuster-Key': apiKey,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        id: agentId,
         argument: JSON.stringify({
           profileUrl: linkedinUrl,
           message,
