@@ -34,6 +34,21 @@ import {
 } from '@/lib/phantombuster';
 import { sendEmail, isResendConfigured } from '@/lib/resend';
 
+/**
+ * Dérive un mot-clé sectoriel depuis le secteur du lead pour personnaliser le message LinkedIn.
+ */
+function getSectorKeyword(sector: string | null | undefined): string {
+  const s = (sector ?? '').toLowerCase();
+  if (s.includes('e-commerce') || s.includes('ecommerce') || s.includes('commerce')) return 'e-commerce';
+  if (s.includes('web') || s.includes('agence') || s.includes('digital') || s.includes('numérique')) return 'développement web';
+  if (s.includes('hébergement') || s.includes('cloud') || s.includes('infogérance') || s.includes('hosting')) return 'hébergement et infogérance';
+  if (s.includes('logiciel') || s.includes('software') || s.includes('saas') || s.includes('erp')) return 'solutions logicielles';
+  if (s.includes('sécurité') || s.includes('cybersécurité')) return 'cybersécurité';
+  if (s.includes('iot') || s.includes('industrie')) return 'transformation numérique';
+  if (s.includes('conseil') || s.includes('consulting')) return 'conseil digital';
+  return 'digital et technologie';
+}
+
 export async function POST(req: NextRequest) {
   const authError = await checkApiKey(req);
   if (authError) return authError;
@@ -105,11 +120,19 @@ export async function POST(req: NextRequest) {
     const res = isConnected
       ? await sendLinkedInMessage(
           lead.linkedin_url,
-          `Bonjour ${lead.contact_name ?? ''},\n\nNous accompagnons des entreprises comme ${lead.company} dans leur hébergement et infogérance. Seriez-vous disponible pour un échange rapide ?\n\nCordialement,\nLoïc Fretay - Cognix Systems`
+          (() => {
+          const prenom = (lead.contact_name ?? '').trim().split(' ')[0] || 'vous';
+          const keyword = getSectorKeyword(lead.sector);
+          return `Bonjour ${prenom}, Merci pour la connexion !\n\nNous accompagnons des entreprises en ${keyword} dans leur hébergement et infogérance. Seriez-vous disponible pour un échange rapide de 15 minutes ?\n\nCordialement,\nLoïc Fretay - Cognix Systems`;
+        })()
         )
       : await sendLinkedInConnection(
           lead.linkedin_url,
-          `Bonjour ${lead.contact_name ?? ''}, je souhaite rejoindre votre réseau dans le cadre de nos services d'hébergement et infogérance. Loïc Fretay - Cognix Systems`
+          (() => {
+          const prenom = (lead.contact_name ?? '').trim().split(' ')[0] || 'vous';
+          const keyword = getSectorKeyword(lead.sector);
+          return `Bonjour ${prenom}, Je développe un réseau d'experts du digital et recherche des partenaires en ${keyword} afin de créer des synergies d'affaires.\nSeriez-vous ouvert à une mise en relation ?`;
+        })()
         );
 
     if (res.status === 'launched') {
