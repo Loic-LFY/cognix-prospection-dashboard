@@ -4,9 +4,8 @@ import { getDb } from '@/lib/db';
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/leads/pending-csv?token={CSV_EXPORT_TOKEN}
- *
- * Retourne un CSV public des leads approuvés sans URL LinkedIn.
+ * GET /api/leads/pending-csv?token=...
+ * Retourne un CSV des leads approuvés sans URL LinkedIn.
  * Colonnes : firstName, lastName, companyName
  * Utilisé comme spreadsheetUrl pour le Phantom "Profile URL Finder".
  */
@@ -28,18 +27,16 @@ export async function GET(req: NextRequest) {
      LIMIT 50`
   ).all() as { contact_name: string | null; company: string }[];
 
+  const esc = (s: string) => '"' + s.replace(/"/g, '""') + '"';
+
   const rows = leads.map((l) => {
     const parts = (l.contact_name ?? l.company).trim().split(' ');
     const firstName = parts[0] ?? '';
     const lastName = parts.slice(1).join(' ') || l.company;
-    const companyName = l.company;
-    // Echapper les virgules et guillemets CSV
-    const esc = (s: string) => `"${s.replace(/"/g, '""')}"`;
-    return `${esc(firstName)},${esc(lastName)},${esc(companyName)}`;
+    return [esc(firstName), esc(lastName), esc(l.company)].join(',');
   });
 
-  const csv = ['firstName,lastName,companyName', ...rows].join('
-');
+  const csv = ['firstName,lastName,companyName', ...rows].join('\n');
 
   return new NextResponse(csv, {
     status: 200,
