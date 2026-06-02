@@ -16,7 +16,6 @@ const PUBLIC_PATHS = [
   '/login',
   '/api/auth',
   '/api/webhooks/resend',
-  '/api/leads/pending-csv',
   '/_next',
   '/logo-cognix.png',
   '/favicon.ico',
@@ -32,6 +31,9 @@ export function middleware(req: NextRequest) {
   }
   // Statut moteur public (Header le poll avant auth)
   if (pathname === '/api/control/status') return NextResponse.next();
+
+  // CSV export pour PhantomBuster — auth via token dans URL (pas header)
+  if (pathname === '/api/leads/pending-csv' || pathname.endsWith('/search-csv')) return NextResponse.next();
 
   // Machine-to-machine : x-api-key (valeur connue à build-time ou injectée)
   const apiKey = process.env.API_KEY;
