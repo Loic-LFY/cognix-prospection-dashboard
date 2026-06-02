@@ -282,8 +282,9 @@ export async function sendLinkedInConnection(
 
     const newArg = {
       ...currentArg,
-      spreadsheetUrl: linkedinUrl,      // URL du profil LinkedIn cible
-      numberOfAddsPerLaunch: 1,          // 1 seul par appel
+      inputType: 'profileUrl',           // URL directe, pas CSV
+      profileUrl: linkedinUrl,           // URL du profil LinkedIn cible
+      numberOfAddsPerLaunch: 1,
       message: message ?? (currentArg.message as string ?? ''),
     };
 
@@ -345,8 +346,9 @@ export async function sendLinkedInMessage(
 
     const newArg = {
       ...currentArg,
-      spreadsheetUrl: linkedinUrl,   // URL du profil LinkedIn cible
-      profilesPerLaunch: 1,           // 1 seul par appel
+      inputType: 'profileUrl',       // URL directe, pas CSV
+      profileUrl: linkedinUrl,       // URL du profil LinkedIn cible
+      profilesPerLaunch: 1,
       message,
     };
 
