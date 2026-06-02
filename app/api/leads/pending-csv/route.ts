@@ -4,10 +4,12 @@ import { getDb } from '@/lib/db';
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/leads/pending-csv?token=...
- * Retourne un CSV des leads approuvés sans URL LinkedIn.
+ * GET /api/leads/pending-csv?token=***
+ * Retourne un CSV des leads approuvés sans URL LinkedIn ET avec un contact identifié.
  * Colonnes : firstName, lastName, companyName
  * Utilisé comme spreadsheetUrl pour le Phantom "Profile URL Finder".
+ *
+ * Leads sans contact_name sont exclus (pas de prénom/nom = impossible à chercher sur LinkedIn).
  */
 export async function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get('token');
@@ -23,18 +25,23 @@ export async function GET(req: NextRequest) {
      WHERE qualification_status = 'approved'
        AND (linkedin_url IS NULL OR linkedin_url = '')
        AND outreach_sent_at IS NULL
+       AND contact_name IS NOT NULL
+       AND contact_name != ''
      ORDER BY created_at ASC
      LIMIT 50`
-  ).all() as { contact_name: string | null; company: string }[];
+  ).all() as { contact_name: string; company: string }[];
 
   const esc = (s: string) => '"' + s.replace(/"/g, '""') + '"';
 
-  const rows = leads.map((l) => {
-    const parts = (l.contact_name ?? l.company).trim().split(' ');
+  const rows: string[] = [];
+  for (const l of leads) {
+    const parts = l.contact_name.trim().split(/\s+/);
     const firstName = parts[0] ?? '';
-    const lastName = parts.slice(1).join(' ') || l.company;
-    return [esc(firstName), esc(lastName), esc(l.company)].join(',');
-  });
+    const lastName = parts.slice(1).join(' ');
+    // Skip si pas de prénom ET pas de nom (contact_name = 1 seul mot)
+    if (!firstName || !lastName) continue;
+    rows.push([esc(firstName), esc(lastName), esc(l.company)].join(','));
+  }
 
   const csv = ['firstName,lastName,companyName', ...rows].join('\n');
 
