@@ -6,8 +6,21 @@ import type { PhantombusterUsage } from '@/lib/phantombuster';
 /** Quota forfait Start : 20h = 72 000 s. Utilisé comme fallback d'affichage. */
 const START_PLAN_HOURS = 20;
 
+/** Formate les secondes en affichage lisible : "5m39s", "1h23m", "2h00" */
+function formatDuration(s: number): string {
+  if (s < 60) return `${s}s`;
+  if (s < 3600) {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return sec > 0 ? `${m}m${sec}s` : `${m}m`;
+  }
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return m > 0 ? `${h}h${String(m).padStart(2, '0')}` : `${h}h00`;
+}
+
 function secondsToHours(s: number): number {
-  return Math.round((s / 3600) * 10) / 10; // 1 décimale
+  return Math.round((s / 3600) * 10) / 10;
 }
 
 function ProgressBar({ percent, warning }: { percent: number; warning: boolean }) {
@@ -68,13 +81,9 @@ export default function PhantombusterUsageWidget() {
 
   if (!data) return null;
 
-  const limitHours =
-    data.planMonthlyLimit > 0
-      ? Math.round((data.planMonthlyLimit / 3600) * 10) / 10
-      : START_PLAN_HOURS;
-
-  const usedHours = secondsToHours(data.monthlyExecutionTime);
-  const remaining = Math.max(0, limitHours - usedHours);
+  const limitSecs = data.planMonthlyLimit > 0 ? data.planMonthlyLimit : START_PLAN_HOURS * 3600;
+  const usedSecs = data.monthlyExecutionTime;
+  const remainingSecs = Math.max(0, limitSecs - usedSecs);
   const percent = data.percentUsed;
   const isWarning = percent >= 80;
   const isCritical = percent >= 100;
@@ -128,12 +137,12 @@ export default function PhantombusterUsageWidget() {
       <div className="flex items-center justify-between mt-2 text-xs text-gray-500 dark:text-gray-400">
         <span>
           <strong className={`text-sm ${isWarning ? 'text-orange-600 dark:text-orange-400' : 'text-gray-900 dark:text-white'}`}>
-            {usedHours}h
+            {formatDuration(usedSecs)}
           </strong>
-          {' '}/ {limitHours}h utilisées ce mois
+          {' '}/ {formatDuration(limitSecs)} utilisées ce mois
         </span>
-        <span className={remaining <= 2 && isWarning ? 'text-orange-500 dark:text-orange-400 font-medium' : ''}>
-          {remaining}h restantes
+        <span className={remainingSecs < 3600 && isWarning ? 'text-orange-500 dark:text-orange-400 font-medium' : ''}>
+          {formatDuration(remainingSecs)} restantes
         </span>
       </div>
 
