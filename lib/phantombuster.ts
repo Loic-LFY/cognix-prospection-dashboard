@@ -421,11 +421,14 @@ export async function fetchPhantombusterUsage(): Promise<PhantombusterUsage> {
     }
 
     const data = await res.json();
-    const used: number = (data as Record<string, number>).monthlyExecutionTime ?? 0;
-    const planLimit: number =
+    // L'API PB v2 retourne les temps en millisecondes — convertir en secondes
+    const usedMs: number = (data as Record<string, number>).monthlyExecutionTime ?? 0;
+    const used: number = Math.round(usedMs / 1000);
+    const limitMs: number =
       (data as Record<string, Record<string, number>>).plan?.maxMonthlyExecutionTime ??
       (data as Record<string, Record<string, number>>).plan?.monthlyExecutionTime ??
-      START_PLAN_LIMIT_SECONDS;
+      (START_PLAN_LIMIT_SECONDS * 1000);
+    const planLimit: number = Math.round(limitMs / 1000);
     const planName: string =
       (data as Record<string, string>).planName ??
       (data as Record<string, Record<string, string>>).plan?.name ??
