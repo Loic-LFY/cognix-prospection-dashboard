@@ -81,7 +81,8 @@ export async function POST(req: NextRequest) {
     if (!lead.linkedin_url) {
       const searchRes = await findLinkedInProfileUrl(
         lead.contact_name ?? lead.company,
-        lead.company
+        lead.company,
+        lead.id  // CSV ciblé sur ce lead uniquement
       );
 
       if (searchRes.status === 'found' && searchRes.profileUrl) {
