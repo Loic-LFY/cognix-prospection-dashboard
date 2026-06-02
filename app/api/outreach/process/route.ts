@@ -121,17 +121,15 @@ export async function POST(req: NextRequest) {
       ? await sendLinkedInMessage(
           lead.linkedin_url,
           (() => {
-          const prenom = (lead.contact_name ?? '').trim().split(' ')[0] || 'vous';
           const keyword = getSectorKeyword(lead.sector);
-          return `Bonjour ${prenom}, Merci pour la connexion !\n\nNous accompagnons des entreprises en ${keyword} dans leur hébergement et infogérance. Seriez-vous disponible pour un échange rapide de 15 minutes ?\n\nCordialement,\nLoïc Fretay - Cognix Systems`;
+          return `Bonjour #firstName#, Merci pour la connexion !\n\nNous accompagnons des entreprises en ${keyword} dans leur hébergement et infogérance. Seriez-vous disponible pour un échange rapide de 15 minutes ?\n\nCordialement,\nLoïc Fretay - Cognix Systems`;
         })()
         )
       : await sendLinkedInConnection(
           lead.linkedin_url,
           (() => {
-          const prenom = (lead.contact_name ?? '').trim().split(' ')[0] || 'vous';
           const keyword = getSectorKeyword(lead.sector);
-          return `Bonjour ${prenom}, Je développe un réseau d'experts du digital et recherche des partenaires en ${keyword} afin de créer des synergies d'affaires.\nSeriez-vous ouvert à une mise en relation ?`;
+          return `Bonjour #firstName#, Je développe un réseau d'experts du digital et recherche des partenaires en ${keyword} afin de créer des synergies d'affaires.\nSeriez-vous ouvert à une mise en relation ?`;
         })()
         );
 
