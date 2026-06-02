@@ -144,7 +144,8 @@ export interface ProfileSearchResult {
  */
 export async function findLinkedInProfileUrl(
   fullName: string,
-  company: string
+  company: string,
+  leadId?: string
 ): Promise<ProfileSearchResult> {
   const apiKey = getApiKey();
   if (!apiKey) {
@@ -164,7 +165,10 @@ export async function findLinkedInProfileUrl(
     // Requiert APP_URL=https://cognix.7solutionsweb.com dans le docker-compose.
     const csvToken = process.env.CSV_EXPORT_TOKEN ?? process.env.API_KEY ?? '';
     const appUrl = process.env.APP_URL ?? '';
-    const csvUrl = `${appUrl}/api/leads/pending-csv?token=${csvToken}`;
+    // CSV ciblé sur ce lead uniquement (évite les mélanges entre leads)
+    const csvUrl = leadId
+      ? `${appUrl}/api/leads/${leadId}/search-csv?token=${csvToken}`
+      : `${appUrl}/api/leads/pending-csv?token=${csvToken}`;
 
     const newArg = {
       ...currentArg,
