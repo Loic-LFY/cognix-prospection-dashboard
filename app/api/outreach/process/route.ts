@@ -79,6 +79,15 @@ export async function POST(req: NextRequest) {
   for (const lead of linkedinLeads.slice(0, 1)) {
     // ── Étape 1 : Recherche de l'URL LinkedIn si absente ──────────────────
     if (!lead.linkedin_url) {
+      // Vérifier qu'on a prénom + nom pour la recherche (sinon marquer not_found et passer)
+      const nameParts = (lead.contact_name ?? '').trim().split(/\s+/);
+      if (!lead.contact_name || nameParts.length < 2) {
+        updateLead(lead.id, { linkedin_status: 'not_found', outreach_sent_at: new Date().toISOString() });
+        results.push({ leadId: lead.id, company: lead.company, channel: 'linkedin',
+          result: 'skip: contact_name invalide (prénom+nom requis)' });
+        continue;
+      }
+
       const searchRes = await findLinkedInProfileUrl(
         lead.contact_name ?? lead.company,
         lead.company,
