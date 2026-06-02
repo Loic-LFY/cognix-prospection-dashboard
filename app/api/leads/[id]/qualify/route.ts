@@ -5,14 +5,14 @@ export const dynamic = 'force-dynamic';
  *
  * Body: { action: 'approve' | 'reject' | 'delete' }
  *
- * - approve → qualification_status = 'approved'
+ * - approve → qualification_status = 'approved' + mise en file outreach
  * - reject  → qualification_status = 'rejected'
  * - delete  → suppression définitive du lead
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { checkApiKey } from '@/lib/auth';
-import { getLeadById, setQualificationStatus, deleteLead } from '@/lib/db';
+import { getLeadById, setQualificationStatus, deleteLead, queueLeadForOutreach } from '@/lib/db';
 
 export async function POST(
   req: NextRequest,
@@ -42,6 +42,13 @@ export async function POST(
   }
 
   const status = action === 'approve' ? 'approved' : 'rejected';
-  const updated = setQualificationStatus(id, status);
+  setQualificationStatus(id, status);
+
+  // Si approuvé → mettre en file d'attente outreach immédiatement
+  if (action === 'approve') {
+    queueLeadForOutreach(id, lead.outreach_channel ?? 'linkedin');
+  }
+
+  const updated = getLeadById(id);
   return NextResponse.json(updated);
 }
