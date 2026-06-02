@@ -160,11 +160,11 @@ export async function findLinkedInProfileUrl(
     // Récupérer la config actuelle pour merger (market, csvName, etc.)
     const currentArg = await fetchAgentArgument(agentId, apiKey);
 
-    // URL CSV interne : le serveur s'appelle lui-même via localhost.
-    // Evite toute dépendance sur DASHBOARD_API_URL (variable externe non dispo côté serveur).
+    // URL CSV publique — PhantomBuster accède depuis ses serveurs, donc il faut l'URL publique.
+    // Requiert APP_URL=https://cognix.7solutionsweb.com dans le docker-compose.
     const csvToken = process.env.CSV_EXPORT_TOKEN ?? process.env.API_KEY ?? '';
-    const internalPort = process.env.PORT ?? '3000';
-    const csvUrl = `http://localhost:${internalPort}/api/leads/pending-csv?token=${csvToken}`;
+    const appUrl = process.env.APP_URL ?? '';
+    const csvUrl = `${appUrl}/api/leads/pending-csv?token=${csvToken}`;
 
     const newArg = {
       ...currentArg,
