@@ -156,23 +156,21 @@ export async function findLinkedInProfileUrl(
     return { profileUrl: null, status: 'skipped', message: 'PHANTOMBUSTER_AGENT_ID_SEARCH non configuré' };
   }
 
-  // Splitter le nom complet en prénom / nom
-  const parts = fullName.trim().split(' ');
-  const firstName = parts[0] ?? '';
-  const lastName = parts.slice(1).join(' ') || company;
-
   try {
     // Récupérer la config actuelle pour merger (market, csvName, etc.)
     const currentArg = await fetchAgentArgument(agentId, apiKey);
 
-    // Passer les données du lead directement dans l'argument
+    // Construire l'URL CSV depuis notre propre dashboard.
+    // Le Phantom "Profile URL Finder" lit ce CSV (colonnes: firstName, lastName, companyName)
+    // plutôt qu'une Google Sheet — évite toute dépendance externe.
+    const dashboardUrl = process.env.DASHBOARD_API_URL ?? '';
+    const csvToken = process.env.CSV_EXPORT_TOKEN ?? process.env.API_KEY ?? '';
+    const csvUrl = `${dashboardUrl}/api/leads/pending-csv?token=${csvToken}`;
+
     const newArg = {
       ...currentArg,
-      spreadsheetUrl: '',           // vider l'URL spreadsheet
-      firstName,
-      lastName,
-      companyName: company,
-      numberOfResultsPerSearch: 1,
+      spreadsheetUrl: csvUrl,
+      numberOfLinesPerLaunch: 1,
     };
 
     const launchRes = await fetch(`${PHANTOMBUSTER_BASE}/agents/launch`, {
