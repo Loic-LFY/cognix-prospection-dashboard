@@ -16,6 +16,7 @@ const PUBLIC_PATHS = [
   '/login',
   '/api/auth',
   '/api/webhooks/resend',
+  '/api/leads/pending-csv',
   '/_next',
   '/logo-cognix.png',
   '/favicon.ico',
