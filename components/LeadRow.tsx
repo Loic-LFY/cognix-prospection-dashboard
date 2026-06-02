@@ -12,8 +12,8 @@ interface Props {
 const statusConfig: Record<string, { label: string; className: string }> = {
   new: { label: 'Nouveau', className: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300' },
   linkedin_pending: { label: 'LinkedIn ⏳', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' },
-  connection_sent: { label: 'Connexion 📤', className: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300' },
-  connected: { label: 'Connecté 🤝', className: 'bg-teal-100 text-teal-700 dark:bg-teal-900 dark:text-teal-300' },
+  connection_sent: { label: 'Connexion', className: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300' },
+  connected: { label: 'Connecté', className: 'bg-teal-100 text-teal-700 dark:bg-teal-900 dark:text-teal-300' },
   message_sent: { label: 'Message 💬', className: 'bg-violet-100 text-violet-700 dark:bg-violet-900 dark:text-violet-300' },
   chaud: { label: '🔥 Chaud', className: 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300' },
   rdv_planifie: { label: '📅 RDV', className: 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' },
@@ -202,7 +202,7 @@ export default function LeadRow({ lead }: Props) {
               title="Connexion acceptée sur LinkedIn ? Cliquer pour envoyer le message"
               className="inline-flex items-center gap-1 px-2 py-0.5 bg-teal-100 hover:bg-teal-200 dark:bg-teal-900 dark:hover:bg-teal-800 text-teal-700 dark:text-teal-300 text-xs font-medium rounded-lg transition disabled:opacity-40 w-fit"
             >
-              {connectBusy ? '⏳' : '🤝'} Connecté
+              {connectBusy ? '⏳' : ''} Connecté
             </button>
           )}
         </div>
