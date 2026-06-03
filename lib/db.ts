@@ -353,7 +353,7 @@ export function getStats() {
   const dailyRaw = db.prepare(`
     SELECT DATE(created_at) as date, temperature, COUNT(*) as count
     FROM leads
-    WHERE created_at >= datetime('now', '-7 days')
+    WHERE created_at >= datetime('now', '-14 days')
     GROUP BY DATE(created_at), temperature
   `).all() as { date: string; temperature: string; count: number }[];
 
@@ -361,12 +361,12 @@ export function getStats() {
     SELECT DATE(connection_accepted_at) as date, COUNT(*) as count
     FROM leads
     WHERE connection_accepted_at IS NOT NULL
-      AND connection_accepted_at >= datetime('now', '-7 days')
+      AND connection_accepted_at >= datetime('now', '-14 days')
     GROUP BY DATE(connection_accepted_at)
   `).all() as { date: string; count: number }[];
 
   const daily: DailyCount[] = [];
-  for (let i = 6; i >= 0; i--) {
+  for (let i = 13; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
     const dateStr = d.toISOString().slice(0, 10);
@@ -522,3 +522,4 @@ export function resetDailyActions(): Control {
     .run();
   return getControl();
 }
+
