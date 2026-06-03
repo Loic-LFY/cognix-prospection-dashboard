@@ -110,9 +110,11 @@ export async function POST(req: NextRequest) {
         });
         continue;
       } else {
+        // Sortir de la file pour ne pas reboucler indéfiniment sur le même lead
         updateLead(lead.id, {
           linkedin_found: 0,
           linkedin_status: 'not_found',
+          outreach_sent_at: new Date().toISOString(),
         });
         results.push({
           leadId: lead.id,
@@ -231,3 +233,4 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ processed: results.length, results });
 }
+
