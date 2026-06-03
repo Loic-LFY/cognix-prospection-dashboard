@@ -28,7 +28,7 @@ export default function DailyChart({ daily }: Props) {
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 shadow-sm">
       <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4 uppercase tracking-wide">
-        📈 Leads / Jour (7 jours)
+        📈 Leads / Jour (14 jours)
       </h3>
       <ResponsiveContainer width="100%" height={200}>
         <ComposedChart data={data} margin={{ top: 4, right: 8, left: -10, bottom: 0 }}>
@@ -54,3 +54,4 @@ export default function DailyChart({ daily }: Props) {
     </div>
   );
 }
+
