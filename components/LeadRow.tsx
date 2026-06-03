@@ -71,6 +71,9 @@ export default function LeadRow({ lead }: Props) {
   );
   const [busy, setBusy] = useState(false);
   const [connectBusy, setConnectBusy] = useState(false);
+  const [showUrlInput, setShowUrlInput] = useState(false);
+  const [manualUrl, setManualUrl] = useState('');
+  const [urlBusy, setUrlBusy] = useState(false);
 
   async function qualify(action: 'approve' | 'delete') {
     setBusy(true);
@@ -101,6 +104,37 @@ export default function LeadRow({ lead }: Props) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ outreach_channel: next }),
     });
+  }
+
+  async function handleSaveLinkedInUrl() {
+    const url = manualUrl.trim();
+    if (!url.startsWith('https://www.linkedin.com/') && !url.startsWith('https://linkedin.com/')) {
+      alert('URL LinkedIn invalide (doit commencer par https://www.linkedin.com/ ou https://linkedin.com/)');
+      return;
+    }
+    setUrlBusy(true);
+    try {
+      const res = await fetch(`/api/leads/${lead.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          linkedin_url: url,
+          linkedin_found: 1,
+          linkedin_status: 'found',
+          // Remettre en file d'attente (réinitialiser outreach_sent_at)
+          outreach_sent_at: null,
+        }),
+      });
+      if (res.ok) {
+        setCurrentLiStatus('found');
+        setShowUrlInput(false);
+        setManualUrl('');
+        // Forcer rechargement de la ligne pour réfléter le lien
+        window.location.reload();
+      }
+    } finally {
+      setUrlBusy(false);
+    }
   }
 
   async function handleMarkConnected() {
@@ -194,6 +228,47 @@ export default function LeadRow({ lead }: Props) {
             <span className={`text-xs ${liStatus.className}`}>{liStatus.label}</span>
           )}
 
+          {/* Saisie manuelle URL — visible si not_found */}
+          {currentLiStatus === 'not_found' && (
+            <>
+              {showUrlInput ? (
+                <div className="flex items-center gap-1 mt-1">
+                  <input
+                    type="url"
+                    value={manualUrl}
+                    onChange={(e) => setManualUrl(e.target.value)}
+                    placeholder="https://linkedin.com/in/..."
+                    className="text-xs px-2 py-0.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white w-40"
+                    onKeyDown={(e) => e.key === 'Enter' && handleSaveLinkedInUrl()}
+                    autoFocus
+                  />
+                  <button
+                    onClick={handleSaveLinkedInUrl}
+                    disabled={urlBusy || !manualUrl.trim()}
+                    title="Enregistrer et mettre en file"
+                    className="px-1.5 py-0.5 bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-700 dark:text-blue-300 text-xs rounded transition disabled:opacity-40"
+                  >
+                    {urlBusy ? '⏳' : '✓'}
+                  </button>
+                  <button
+                    onClick={() => { setShowUrlInput(false); setManualUrl(''); }}
+                    className="px-1.5 py-0.5 text-gray-400 hover:text-gray-600 text-xs"
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowUrlInput(true)}
+                  title="Saisir l'URL LinkedIn manuellement"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 text-xs rounded-lg transition w-fit"
+                >
+                  🔗 URL manuelle
+                </button>
+              )}
+            </>
+          )}
+
           {/* Bouton "Marquer connecté" — visible uniquement en connection_sent */}
           {currentLiStatus === 'connection_sent' && (
             <button
@@ -269,3 +344,4 @@ export default function LeadRow({ lead }: Props) {
     </tr>
   );
 }
+
