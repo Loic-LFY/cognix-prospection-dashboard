@@ -120,8 +120,8 @@ export async function findLinkedInProfileUrl(
     const csvToken = process.env.CSV_EXPORT_TOKEN ?? process.env.API_KEY ?? '';
     const appUrl = process.env.APP_URL ?? '';
     const csvUrl = leadId
-      ? `${appUrl}/api/leads/${leadId}/search-csv?token=***
-      : `${appUrl}/api/leads/pending-csv?token=***
+      ? `${appUrl}/api/leads/${leadId}/search-csv?token=${csvToken}`
+      : `${appUrl}/api/leads/pending-csv?token=${csvToken}`
 
     const res = await fetch(`${PHANTOMBUSTER_BASE}/agents/launch-sync`, {
       method: 'POST',
