@@ -12,9 +12,12 @@
  *  - PHANTOMBUSTER_AGENT_ID_CONNECTION
  *  - PHANTOMBUSTER_AGENT_ID_MESSAGE
  *
- * IMPORTANT : Les Phantoms CONNECTION et MESSAGE utilisent sessionCookie + userAgent
- * stockés dans leur configuration PB. On récupère toujours la config actuelle avant
- * de lancer pour ne jamais écraser ces champs sensibles.
+ * Design :
+ *  - On utilise bonusArgument (single-use, mergé sur la config PB) pour tous les lancements.
+ *    La config sauvegardée de l'agent (sessionCookie, userAgent, etc.) n'est JAMAIS modifiée.
+ *  - SEARCH  : launch-sync + includeLogs=true → stream NDJSON, regex sur les logs
+ *  - CONNECTION/MESSAGE : launch simple (pas besoin d'attendre la fin)
+ *  - 1 profil par run dans tous les cas (numberOfAddsPerLaunch/profilesPerLaunch = 1)
  */
 
 const PHANTOMBUSTER_BASE = 'https://api.phantombuster.com/api/v2';
@@ -27,23 +30,6 @@ export interface PhantomLaunchResult {
 
 function getApiKey(): string | null {
   return process.env.PHANTOMBUSTER_API_KEY ?? null;
-}
-
-/**
- * Récupère l'argument JSON actuel d'un agent PB.
- * Permet de merger les champs sensibles (sessionCookie, userAgent) sans les écraser.
- */
-async function fetchAgentArgument(agentId: string, apiKey: string): Promise<Record<string, unknown>> {
-  try {
-    const res = await fetch(`${PHANTOMBUSTER_BASE}/agents/fetch?id=${agentId}`, {
-      headers: { 'X-Phantombuster-Key': apiKey },
-    });
-    if (!res.ok) return {};
-    const data = await res.json();
-    return JSON.parse(data.argument || '{}');
-  } catch {
-    return {};
-  }
 }
 
 /**
@@ -93,37 +79,6 @@ export function nextOutreachWindow(): Date {
   return now;
 }
 
-// ─── Helpers polling ─────────────────────────────────────────────────────────
-
-/**
- * Attend la fin d'un container PB via /containers/fetch (polling statut).
- */
-async function waitForContainer(
-  containerId: string,
-  apiKey: string,
-  maxAttempts = 12,
-  intervalMs = 5000
-): Promise<'finished' | 'error' | 'timeout'> {
-  for (let i = 0; i < maxAttempts; i++) {
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
-
-    const res = await fetch(
-      `${PHANTOMBUSTER_BASE}/containers/fetch?id=${containerId}`,
-      { headers: { 'X-Phantombuster-Key': apiKey } }
-    ).catch(() => null);
-
-    if (!res || !res.ok) continue;
-
-    const data = await res.json().catch(() => null);
-    if (!data) continue;
-
-    const status: string = data.status ?? '';
-    if (status === 'finished') return 'finished';
-    if (status === 'error' || status === 'crashed') return 'error';
-  }
-  return 'timeout';
-}
-
 // ─── Recherche de profil ──────────────────────────────────────────────────────
 
 export interface ProfileSearchResult {
@@ -133,13 +88,18 @@ export interface ProfileSearchResult {
 }
 
 /**
- * Lance "Cognix - Profile URL Finder" pour trouver l'URL LinkedIn d'un lead.
+ * Lance "Cognix - Profile URL Finder" via launch-sync + includeLogs.
  *
- * Extraction du résultat : on lit les logs console du container et on capture
- * toute URL linkedin.com/in/ présente dans les logs (regex large).
+ * On utilise bonusArgument (single-use) pour passer le CSV URL sans toucher
+ * à la config sauvegardée de l'agent.
  *
- * Note : le Phantom peut logger l'URL de plusieurs façons selon la version.
- * La regex capture toute occurrence d'une URL linkedin.com/in/ dans les logs.
+ * Le stream NDJSON contient les messages :
+ *   { type: "start", containerId, agentId }
+ *   { type: "logs", body: { output: "...", outputPos: N } }
+ *   { type: "summary", exitCode?, executionTime, containerId }
+ *   { type: "error", message }
+ *
+ * On collecte tous les logs et on cherche toute URL linkedin.com/in/.
  */
 export async function findLinkedInProfileUrl(
   fullName: string,
@@ -157,29 +117,13 @@ export async function findLinkedInProfileUrl(
   }
 
   try {
-    // Récupérer la config actuelle pour merger (market, csvName, etc.)
-    const currentArg = await fetchAgentArgument(agentId, apiKey);
-
-    // URL CSV publique — PhantomBuster accède depuis ses serveurs, donc il faut l'URL publique.
-    // Requiert APP_URL=https://cognix.7solutionsweb.com dans le docker-compose.
     const csvToken = process.env.CSV_EXPORT_TOKEN ?? process.env.API_KEY ?? '';
     const appUrl = process.env.APP_URL ?? '';
-    // CSV ciblé sur ce lead uniquement (évite les mélanges entre leads)
     const csvUrl = leadId
       ? `${appUrl}/api/leads/${leadId}/search-csv?token=***
       : `${appUrl}/api/leads/pending-csv?token=***
 
-    const newArg = {
-      ...currentArg,
-      spreadsheetUrl: csvUrl,
-      numberOfLinesPerLaunch: 1,
-      // Noms des colonnes dans le CSV (requis par le Phantom)
-      firstNameColumnName: 'firstName',
-      lastNameColumnName: 'lastName',
-      companyNameColumnName: 'companyName',
-    };
-
-    const launchRes = await fetch(`${PHANTOMBUSTER_BASE}/agents/launch`, {
+    const res = await fetch(`${PHANTOMBUSTER_BASE}/agents/launch-sync`, {
       method: 'POST',
       headers: {
         'X-Phantombuster-Key': apiKey,
@@ -187,62 +131,83 @@ export async function findLinkedInProfileUrl(
       },
       body: JSON.stringify({
         id: agentId,
-        argument: JSON.stringify(newArg),
+        bonusArgument: {
+          spreadsheetUrl: csvUrl,
+          numberOfLinesPerLaunch: 1,
+          firstNameColumnName: 'firstName',
+          lastNameColumnName: 'lastName',
+          companyNameColumnName: 'companyName',
+        },
+        includeLogs: true,
       }),
     });
 
-    if (!launchRes.ok) {
-      const err = await launchRes.json().catch(() => ({}));
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
       return {
         profileUrl: null,
         status: 'error',
-        message: (err as Record<string, string>).error ?? `HTTP ${launchRes.status}`,
+        message: (err as Record<string, string>).error ?? `HTTP ${res.status}`,
       };
     }
 
-    const launchData = await launchRes.json();
-    const containerId: string = launchData.containerId ?? '';
-    if (!containerId) {
-      return { profileUrl: null, status: 'error', message: 'containerId absent de la réponse PhantomBuster' };
+    // Parser le stream NDJSON
+    const reader = res.body?.getReader();
+    if (!reader) {
+      return { profileUrl: null, status: 'error', message: 'Stream indisponible' };
     }
 
-    // Attendre la fin via /containers/fetch
-    const finalStatus = await waitForContainer(containerId, apiKey);
+    const decoder = new TextDecoder();
+    let allLogs = '';
+    let buffer = '';
+    let timedOut = false;
 
-    if (finalStatus === 'timeout') {
-      return { profileUrl: null, status: 'timeout', message: 'Timeout 60s — réessayer plus tard' };
-    }
-    if (finalStatus === 'error') {
-      return { profileUrl: null, status: 'error', message: 'Le Phantom a retourné une erreur' };
-    }
+    // Timeout global 75s (le Phantom SEARCH peut prendre ~30-45s)
+    const timeout = new Promise<void>((resolve) => setTimeout(resolve, 75_000));
 
-    // Lire les logs console du container
-    const outputRes = await fetch(
-      `${PHANTOMBUSTER_BASE}/containers/fetch-output?id=${containerId}`,
-      { headers: { 'X-Phantombuster-Key': apiKey } }
-    );
-
-    if (outputRes.ok) {
-      const outputData = await outputRes.json();
-      const logs: string = typeof outputData === 'string'
-        ? outputData
-        : (outputData.output ?? outputData.text ?? JSON.stringify(outputData));
-
-      // Capture toute URL linkedin.com/in/ présente dans les logs
-      // Le Phantom peut utiliser différents patterns selon la version : "Got ...", "Found ...", URL brute, etc.
-      const urlMatch = logs.match(/(https?:\/\/(?:www\.)?linkedin\.com\/in\/[^\s"'\n,}\]]+)/);
-      if (urlMatch?.[1]) {
-        return { profileUrl: urlMatch[1].trim().replace(/\/$/, ''), status: 'found' };
+    const readStream = async () => {
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            try {
+              const msg = JSON.parse(trimmed) as Record<string, unknown>;
+              if (msg.type === 'logs') {
+                const body = msg.body as Record<string, string> | undefined;
+                if (body?.output) allLogs += body.output;
+              }
+              if (msg.type === 'summary' || msg.type === 'error') {
+                return; // fin du stream
+              }
+            } catch {
+              // ligne non-JSON, ignorer
+            }
+          }
+        }
+      } catch {
+        // déconnexion stream
       }
+    };
 
-      // Si les logs contiennent explicitement "No result" ou "0 profile"
-      if (/no result|0 profile|not found/i.test(logs)) {
-        return {
-          profileUrl: null,
-          status: 'not_found',
-          message: 'Profil introuvable — URL LinkedIn à renseigner manuellement',
-        };
-      }
+    await Promise.race([
+      readStream(),
+      timeout.then(() => { timedOut = true; reader.cancel().catch(() => {}); }),
+    ]);
+
+    if (timedOut && !allLogs) {
+      return { profileUrl: null, status: 'timeout', message: 'Timeout 75s sans réponse' };
+    }
+
+    // Chercher toute URL linkedin.com/in/ dans les logs
+    const urlMatch = allLogs.match(/(https?:\/\/(?:www\.)?linkedin\.com\/in\/[^\s"'\n,}\]]+)/);
+    if (urlMatch?.[1]) {
+      return { profileUrl: urlMatch[1].trim().replace(/\/$/, ''), status: 'found' };
     }
 
     return {
@@ -258,13 +223,13 @@ export async function findLinkedInProfileUrl(
 // ─── Connexion LinkedIn ───────────────────────────────────────────────────────
 
 /**
- * Lance "Cognix - Auto Connect" pour envoyer une demande de connexion LinkedIn.
+ * Lance "Cognix - Auto Connect" via bonusArgument (single-use).
  *
- * Récupère la config actuelle du Phantom (sessionCookie, userAgent, etc.)
- * et merge avec l'URL du profil cible.
+ * La config de l'agent (sessionCookie, userAgent) est préservée.
+ * On envoie à 1 seul profil via inputType='profileUrl'.
  *
- * IMPORTANT : inputType='profileUrl' + profileUrl = 1 profil exact.
- * Ne jamais passer de spreadsheetUrl ici — PB lirait le CSV et confondrait les prénoms.
+ * IMPORTANT : Ne jamais passer spreadsheetUrl ici — PB lirait un CSV
+ * et pourrait confondre les prénoms entre plusieurs lignes.
  */
 export async function sendLinkedInConnection(
   linkedinUrl: string,
@@ -289,17 +254,6 @@ export async function sendLinkedInConnection(
   }
 
   try {
-    // Récupérer la config actuelle pour garder sessionCookie, userAgent, etc.
-    const currentArg = await fetchAgentArgument(agentId, apiKey);
-
-    const newArg = {
-      ...currentArg,
-      inputType: 'profileUrl',      // URL directe — 1 seul profil, pas de CSV
-      profileUrl: linkedinUrl,      // URL du profil cible
-      numberOfAddsPerLaunch: 1,     // Sécurité : 1 seule invitation par run
-      message: message ?? (currentArg.message as string ?? ''),
-    };
-
     const res = await fetch(`${PHANTOMBUSTER_BASE}/agents/launch`, {
       method: 'POST',
       headers: {
@@ -308,13 +262,22 @@ export async function sendLinkedInConnection(
       },
       body: JSON.stringify({
         id: agentId,
-        argument: JSON.stringify(newArg),
+        bonusArgument: {
+          inputType: 'profileUrl',      // 1 profil exact, pas de CSV
+          profileUrl: linkedinUrl,
+          numberOfAddsPerLaunch: 1,     // sécurité : 1 seule invitation
+          ...(message ? { message } : {}),
+        },
       }),
     });
 
     const data = await res.json();
     if (!res.ok) {
-      return { containerId: '', status: 'error', message: (data as Record<string, string>).error ?? JSON.stringify(data) };
+      return {
+        containerId: '',
+        status: 'error',
+        message: (data as Record<string, string>).error ?? JSON.stringify(data),
+      };
     }
     return { containerId: (data as Record<string, string>).containerId ?? '', status: 'launched' };
   } catch (e) {
@@ -325,10 +288,12 @@ export async function sendLinkedInConnection(
 // ─── Message LinkedIn ─────────────────────────────────────────────────────────
 
 /**
- * Lance "Cognix - Message Sender" pour envoyer un message LinkedIn.
+ * Lance "Cognix - Message Sender" via bonusArgument (single-use).
  *
- * IMPORTANT : inputType='profileUrl' + profileUrl = 1 profil exact.
- * Ne jamais passer de spreadsheetUrl ici — PB lirait le CSV et confondrait les prénoms.
+ * La config de l'agent (sessionCookie, userAgent) est préservée.
+ * On envoie à 1 seul profil via inputType='profileUrl'.
+ *
+ * IMPORTANT : Ne jamais passer spreadsheetUrl ici — même raison que CONNECTION.
  */
 export async function sendLinkedInMessage(
   linkedinUrl: string,
@@ -353,17 +318,6 @@ export async function sendLinkedInMessage(
   }
 
   try {
-    // Récupérer la config actuelle pour garder sessionCookie, userAgent, etc.
-    const currentArg = await fetchAgentArgument(agentId, apiKey);
-
-    const newArg = {
-      ...currentArg,
-      inputType: 'profileUrl',    // URL directe — 1 seul profil, pas de CSV
-      profileUrl: linkedinUrl,    // URL du profil cible
-      profilesPerLaunch: 1,       // Sécurité : 1 seul message par run
-      message,
-    };
-
     const res = await fetch(`${PHANTOMBUSTER_BASE}/agents/launch`, {
       method: 'POST',
       headers: {
@@ -372,13 +326,22 @@ export async function sendLinkedInMessage(
       },
       body: JSON.stringify({
         id: agentId,
-        argument: JSON.stringify(newArg),
+        bonusArgument: {
+          inputType: 'profileUrl',    // 1 profil exact, pas de CSV
+          profileUrl: linkedinUrl,
+          profilesPerLaunch: 1,       // sécurité : 1 seul message
+          message,
+        },
       }),
     });
 
     const data = await res.json();
     if (!res.ok) {
-      return { containerId: '', status: 'error', message: (data as Record<string, string>).error ?? JSON.stringify(data) };
+      return {
+        containerId: '',
+        status: 'error',
+        message: (data as Record<string, string>).error ?? JSON.stringify(data),
+      };
     }
     return { containerId: (data as Record<string, string>).containerId ?? '', status: 'launched' };
   } catch (e) {
@@ -429,7 +392,6 @@ export async function fetchPhantombusterUsage(): Promise<PhantombusterUsage> {
     }
 
     const data = await res.json();
-    // L'API PB v2 retourne les temps en millisecondes — convertir en secondes
     const usedMs: number = (data as Record<string, number>).monthlyExecutionTime ?? 0;
     const used: number = Math.round(usedMs / 1000);
     const limitMs: number =
