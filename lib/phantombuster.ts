@@ -124,6 +124,127 @@ async function waitForContainer(
   return 'timeout';
 }
 
+// ─── Parsing CSV résultat PB ──────────────────────────────────────────────────
+
+/**
+ * Parse une ligne CSV en tenant compte des guillemets.
+ */
+function parseCSVLine(line: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === ',' && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  result.push(current.trim());
+  return result;
+}
+
+/**
+ * Récupère le fichier CSV résultat d'un agent PB et cherche l'URL LinkedIn
+ * correspondant à la société/contact traité.
+ *
+ * Le CSV résultat contient : firstName, lastName, companyName, email, location,
+ * query, url, title, description, score, timestamp, error
+ *
+ * On utilise /agents/fetch-output?id={agentId} pour obtenir le dernier CSV.
+ */
+async function extractUrlFromAgentCSV(
+  agentId: string,
+  apiKey: string,
+  company: string,
+  fullName: string
+): Promise<string | null> {
+  try {
+    // /agents/fetch-output retourne le dernier fichier de résultats de l'agent
+    const res = await fetch(`${PHANTOMBUSTER_BASE}/agents/fetch-output?id=${agentId}`, {
+      headers: { 'X-Phantombuster-Key': apiKey },
+    });
+    if (!res.ok) return null;
+
+    const data = await res.json();
+
+    // Selon la version PB, le CSV peut être dans différents champs
+    let csvText: string | null = null;
+
+    // Cas 1 : outputFileUrl (URL vers fichier CSV externe)
+    const csvUrl: string | null =
+      (data as Record<string, string>).csvUrl ??
+      (data as Record<string, string>).outputFileUrl ??
+      null;
+
+    if (csvUrl) {
+      const csvRes = await fetch(csvUrl).catch(() => null);
+      if (csvRes?.ok) csvText = await csvRes.text();
+    }
+
+    // Cas 2 : output direct (string CSV ou JSON)
+    if (!csvText) {
+      const rawOutput = (data as Record<string, string>).output ?? '';
+      if (typeof rawOutput === 'string' && rawOutput.includes('firstName')) {
+        csvText = rawOutput;
+      }
+    }
+
+    if (!csvText) return null;
+
+    const lines = csvText.trim().split('\n');
+    if (lines.length < 2) return null;
+
+    const headers = parseCSVLine(lines[0]);
+    const urlIdx = headers.findIndex((h) => h.toLowerCase() === 'url');
+    const companyIdx = headers.findIndex((h) => h.toLowerCase() === 'companyname');
+    const firstNameIdx = headers.findIndex((h) => h.toLowerCase() === 'firstname');
+    const errorIdx = headers.findIndex((h) => h.toLowerCase() === 'error');
+
+    if (urlIdx === -1) return null;
+
+    const companyLower = company.toLowerCase();
+    const nameParts = fullName.toLowerCase().split(/\s+/);
+
+    // Chercher la ligne correspondant à notre lead (la plus récente en premier)
+    for (let i = lines.length - 1; i >= 1; i--) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      const cols = parseCSVLine(line);
+
+      const rowCompany = (cols[companyIdx] ?? '').toLowerCase();
+      const rowFirstName = (cols[firstNameIdx] ?? '').toLowerCase();
+
+      const matchesCompany =
+        rowCompany.includes(companyLower.substring(0, 8)) ||
+        companyLower.includes(rowCompany.substring(0, 8));
+      const matchesName =
+        nameParts.length > 0 && rowFirstName.includes(nameParts[0]);
+
+      if (matchesCompany || matchesName) {
+        const url = cols[urlIdx]?.trim();
+        const error = cols[errorIdx]?.trim();
+        if (url && url.includes('linkedin.com/in/')) {
+          return url;
+        }
+        if (error) return null; // "No result found" explicite
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 // ─── Recherche de profil ──────────────────────────────────────────────────────
 
 export interface ProfileSearchResult {
@@ -135,12 +256,9 @@ export interface ProfileSearchResult {
 /**
  * Lance "Cognix - Profile URL Finder" pour trouver l'URL LinkedIn d'un lead.
  *
- * Ce Phantom attend une Google Sheet avec colonnes firstName, lastName, companyName.
- * On passe les données du lead directement dans l'argument en overridant spreadsheetUrl
- * avec les champs firstName/lastName/companyName si le Phantom le supporte,
- * sinon on retourne skipped (URL à renseigner manuellement).
- *
- * Polling via /containers/fetch + résultat via /containers/fetch-result-object.
+ * Stratégie d'extraction du résultat (par ordre) :
+ *  1. Logs console du container → regex sur URL linkedin.com/in/
+ *  2. Fichier CSV résultat de l'agent → parser CSV + match company/firstName
  */
 export async function findLinkedInProfileUrl(
   fullName: string,
@@ -217,27 +335,34 @@ export async function findLinkedInProfileUrl(
       return { profileUrl: null, status: 'error', message: 'Le Phantom a retourné une erreur' };
     }
 
-    // Le Phantom Profile URL Finder sauvegarde dans un fichier CSV, pas dans resultObject.
-    // On lit les logs du container pour extraire l'URL LinkedIn trouvée.
+    // ── Méthode 1 : Logs console du container ─────────────────────────────
     const outputRes = await fetch(
       `${PHANTOMBUSTER_BASE}/containers/fetch-output?id=${containerId}`,
       { headers: { 'X-Phantombuster-Key': apiKey } }
     );
 
-    if (!outputRes.ok) {
-      return { profileUrl: null, status: 'not_found', message: 'Logs du container indisponibles' };
+    if (outputRes.ok) {
+      const outputData = await outputRes.json();
+      const logs: string = typeof outputData === 'string'
+        ? outputData
+        : (outputData.output ?? outputData.text ?? JSON.stringify(outputData));
+
+      // Regex étendue — capture plusieurs patterns possibles dans les logs PB
+      const urlMatch = logs.match(
+        /(?:Got|Found|profileUrl|linkedin\.com\/in\/)[^\s]*?(https?:\/\/(?:www\.)?linkedin\.com\/in\/[^\s"'\n,]+)|"(https?:\/\/(?:www\.)?linkedin\.com\/in\/[^\s"'\n,]+)"/
+      );
+      const directMatch = logs.match(/(https?:\/\/(?:www\.)?linkedin\.com\/in\/[^\s"'\n,]+)/);
+      const foundUrl = urlMatch?.[1] ?? urlMatch?.[2] ?? directMatch?.[1];
+
+      if (foundUrl) {
+        return { profileUrl: foundUrl.trim(), status: 'found' };
+      }
     }
 
-    const outputData = await outputRes.json();
-    // Les logs sont dans output.output (string) ou directement en string
-    const logs: string = typeof outputData === 'string'
-      ? outputData
-      : (outputData.output ?? outputData.text ?? JSON.stringify(outputData));
-
-    // Extraire l'URL LinkedIn depuis "Got https://linkedin.com/in/..." dans les logs
-    const match = logs.match(/Got (https?:\/\/(?:www\.)?linkedin\.com\/in\/[^\s"\n]+)/);
-    if (match?.[1]) {
-      return { profileUrl: match[1].trim(), status: 'found' };
+    // ── Méthode 2 : CSV résultat de l'agent (fichier de sortie PB) ────────
+    const csvUrl2 = await extractUrlFromAgentCSV(agentId, apiKey, company, fullName);
+    if (csvUrl2) {
+      return { profileUrl: csvUrl2, status: 'found' };
     }
 
     return {
