@@ -133,6 +133,7 @@ export async function findLinkedInProfileUrl(
         id: agentId,
         bonusArgument: {
           spreadsheetUrl: csvUrl,
+          csvName: leadId ? `lead-${leadId.substring(0, 8)}` : 'result',
           numberOfLinesPerLaunch: 1,
           firstNameColumnName: 'firstName',
           lastNameColumnName: 'lastName',
@@ -159,6 +160,7 @@ export async function findLinkedInProfileUrl(
 
     const decoder = new TextDecoder();
     let allLogs = '';
+    let foundUrl: string | null = null;
     let buffer = '';
     let timedOut = false;
 
@@ -178,12 +180,27 @@ export async function findLinkedInProfileUrl(
             if (!trimmed) continue;
             try {
               const msg = JSON.parse(trimmed) as Record<string, unknown>;
+              // Logs PB : { type: "logs", data: ["line1", "line2", ...] }
               if (msg.type === 'logs') {
-                const body = msg.body as Record<string, string> | undefined;
-                if (body?.output) allLogs += body.output;
+                const data = msg.data as string[] | undefined;
+                if (Array.isArray(data)) allLogs += data.join('\n') + '\n';
               }
-              if (msg.type === 'summary' || msg.type === 'error') {
-                return; // fin du stream
+              // Summary PB : { type: "summary", data: { resultObject: [...], output: "..." } }
+              if (msg.type === 'summary') {
+                const summaryData = msg.data as Record<string, unknown> | undefined;
+                // Priorité 1 : resultObject[0].profileUrl (disponible avec csvName unique)
+                const ro = summaryData?.resultObject as Array<Record<string, string>> | null | undefined;
+                if (Array.isArray(ro) && ro.length > 0 && ro[0].profileUrl) {
+                  foundUrl = ro[0].profileUrl.trim().replace(/\/$/, '');
+                }
+                // Priorité 2 : output complet pour le regex
+                if (!foundUrl && typeof summaryData?.output === 'string') {
+                  allLogs += summaryData.output;
+                }
+                return;
+              }
+              if (msg.type === 'error') {
+                return;
               }
             } catch {
               // ligne non-JSON, ignorer
@@ -200,11 +217,16 @@ export async function findLinkedInProfileUrl(
       timeout.then(() => { timedOut = true; reader.cancel().catch(() => {}); }),
     ]);
 
-    if (timedOut && !allLogs) {
+    if (timedOut && !allLogs && !foundUrl) {
       return { profileUrl: null, status: 'timeout', message: 'Timeout 75s sans réponse' };
     }
 
-    // Chercher toute URL linkedin.com/in/ dans les logs
+    // URL trouvée dans resultObject
+    if (foundUrl) {
+      return { profileUrl: foundUrl, status: 'found' };
+    }
+
+    // Fallback : regex dans les logs (cas où resultObject est null)
     const urlMatch = allLogs.match(/(https?:\/\/(?:www\.)?linkedin\.com\/in\/[^\s"'\n,}\]]+)/);
     if (urlMatch?.[1]) {
       return { profileUrl: urlMatch[1].trim().replace(/\/$/, ''), status: 'found' };
