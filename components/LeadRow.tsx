@@ -33,10 +33,10 @@ const linkedinConfig: Record<string, { label: string; className: string }> = {
 };
 
 // Boutons de classification manuelle (visibles pour les leads en conversation ou tiède)
-const TEMP_ACTIONS: { label: string; temperature: Temperature; status?: LeadStatus; className: string }[] = [
-  { label: '🔥 Chaud', temperature: 'chaud', status: 'chaud', className: 'bg-orange-100 hover:bg-orange-200 text-orange-700 dark:bg-orange-900 dark:hover:bg-orange-800 dark:text-orange-300' },
-  { label: '❄️ Froid', temperature: 'froid', className: 'bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900 dark:hover:bg-blue-800 dark:text-blue-300' },
-  { label: '📅 RDV proposé', temperature: 'chaud', status: 'rdv_planifie', className: 'bg-green-100 hover:bg-green-200 text-green-700 dark:bg-green-900 dark:hover:bg-green-800 dark:text-green-300' },
+const TEMP_ACTIONS: { icon: string; label: string; temperature: Temperature; status?: LeadStatus; className: string }[] = [
+  { icon: '🔥', label: 'Chaud', temperature: 'chaud', status: 'chaud', className: 'bg-orange-100 hover:bg-orange-200 text-orange-700 dark:bg-orange-900 dark:hover:bg-orange-800 dark:text-orange-300' },
+  { icon: '❄️', label: 'Froid', temperature: 'froid', className: 'bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900 dark:hover:bg-blue-800 dark:text-blue-300' },
+  { icon: '📅', label: 'RDV proposé', temperature: 'chaud', status: 'rdv_planifie', className: 'bg-green-100 hover:bg-green-200 text-green-700 dark:bg-green-900 dark:hover:bg-green-800 dark:text-green-300' },
 ];
 
 function ScoreDots({ score }: { score: number }) {
@@ -245,10 +245,10 @@ export default function LeadRow({ lead }: Props) {
                   key={action.label}
                   onClick={() => handleSetTemperature(action.temperature, action.status)}
                   disabled={tempBusy}
-                  title={`Classer comme : ${action.label}`}
-                  className={`px-2 py-0.5 text-xs rounded-lg font-medium transition disabled:opacity-40 ${action.className}`}
+                  title={action.label}
+                  className={`w-7 h-7 flex items-center justify-center rounded-lg text-sm transition disabled:opacity-40 ${action.className}`}
                 >
-                  {action.label}
+                  {tempBusy ? '⏳' : action.icon}
                 </button>
               ))}
             </div>
