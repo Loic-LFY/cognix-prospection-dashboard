@@ -129,6 +129,17 @@ export async function POST(req: NextRequest) {
     // ── Étape 2 : Connexion ou message selon l'état du lead ───────────────
     const isConnected = lead.linkedin_connected === 1;
 
+    // Skip si le prospect a déjà initié une conversation (engagement entrant détecté)
+    if (isConnected && lead.linkedin_engagement && lead.linkedin_engagement !== 'none') {
+      results.push({
+        leadId: lead.id,
+        company: lead.company,
+        channel: 'linkedin',
+        result: `skip: conversation déjà engagée (engagement=${lead.linkedin_engagement})`,
+      });
+      continue;
+    }
+
     const res = isConnected
       ? await sendLinkedInMessage(
           lead.linkedin_url,
