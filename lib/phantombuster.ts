@@ -349,9 +349,8 @@ export async function sendLinkedInMessage(
       body: JSON.stringify({
         id: agentId,
         bonusArgument: {
-          inputType: 'profileUrl',    // 1 profil exact, pas de CSV
-          profileUrl: linkedinUrl,
-          profilesPerLaunch: 1,       // sécurité : 1 seul message
+          spreadsheetUrl: linkedinUrl, // URL profil direct (scriptId 9227 ne supporte pas inputType)
+          profilesPerLaunch: 1,        // sécurité : 1 seul message
           message,
         },
       }),
