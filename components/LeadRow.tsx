@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import type { Lead, Temperature } from '@/types/lead';
+import type { Lead, Temperature, LeadStatus } from '@/types/lead';
 import TemperatureBadge from './TemperatureBadge';
 
 interface Props {
@@ -174,7 +174,7 @@ export default function LeadRow({ lead }: Props) {
     }
   }
 
-  async function handleSetTemperature(temperature: Temperature, status?: string) {
+  async function handleSetTemperature(temperature: Temperature, status?: LeadStatus) {
     setTempBusy(true);
     try {
       const body: Record<string, string> = { temperature };
@@ -388,3 +388,4 @@ export default function LeadRow({ lead }: Props) {
     </tr>
   );
 }
+
