@@ -4,6 +4,7 @@ import { getLeadById, getDb } from '@/lib/db';
 import TemperatureBadge from '@/components/TemperatureBadge';
 import QualificationButtons from '@/components/QualificationButtons';
 import OutreachPanel from '@/components/OutreachPanel';
+import TemperatureActions from '@/components/TemperatureActions';
 import EmailStatus from '@/components/EmailStatus';
 import RecapButton from '@/components/RecapButton';
 
@@ -112,6 +113,13 @@ export default async function LeadDetailPage({ params }: Props) {
           <RecapButton leadId={lead.id} />
         </div>
       </div>
+
+      {/* Classification température - visible si tiède ou message_sent */}
+      <TemperatureActions
+        leadId={lead.id}
+        currentTemperature={lead.temperature}
+        currentStatus={lead.status}
+      />
 
       {/* Validation manuelle - bloc critique avant toute prise de contact */}
       <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-xl p-5">
