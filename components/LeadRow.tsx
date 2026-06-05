@@ -33,7 +33,7 @@ const linkedinConfig: Record<string, { label: string; className: string }> = {
 };
 
 // Boutons de classification manuelle (visibles pour les leads en conversation ou tiède)
-const TEMP_ACTIONS: { label: string; temperature: Temperature; status?: string; className: string }[] = [
+const TEMP_ACTIONS: { label: string; temperature: Temperature; status?: LeadStatus; className: string }[] = [
   { label: '🔥 Chaud', temperature: 'chaud', status: 'chaud', className: 'bg-orange-100 hover:bg-orange-200 text-orange-700 dark:bg-orange-900 dark:hover:bg-orange-800 dark:text-orange-300' },
   { label: '❄️ Froid', temperature: 'froid', className: 'bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900 dark:hover:bg-blue-800 dark:text-blue-300' },
   { label: '📅 RDV proposé', temperature: 'chaud', status: 'rdv_planifie', className: 'bg-green-100 hover:bg-green-200 text-green-700 dark:bg-green-900 dark:hover:bg-green-800 dark:text-green-300' },
