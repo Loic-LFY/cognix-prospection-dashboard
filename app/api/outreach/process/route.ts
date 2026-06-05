@@ -8,10 +8,11 @@ export const dynamic = 'force-dynamic';
  *   2. Vérifie la plage horaire 09h-20h Paris
  *   3. Si linkedin_url absent → Profile URL Finder (Phantom search, polling 60s)
  *   4. Si URL trouvée et non connecté → Auto Connect avec note
- *   5. Si URL trouvée et connecté → Message Sender
+ *   5. Si URL trouvée, connecté ET température = new → Message Sender (post-connexion)
  *
  * - Traite 1 lead LinkedIn par appel (espacer les appels de quelques minutes)
  * - Met à jour le statut + compteur daily_actions après chaque action
+ * - Classe en ban + froid les leads avec connexion_sent il y a >7j sans acceptation
  *
  * À appeler via un cron Hermes ou manuellement depuis le dashboard.
  */
@@ -24,6 +25,7 @@ import {
   updateLead,
   getControl,
   incrementDailyActions,
+  getDb,
 } from '@/lib/db';
 import {
   findLinkedInProfileUrl,
@@ -34,19 +36,55 @@ import {
 } from '@/lib/phantombuster';
 import { sendEmail, isResendConfigured } from '@/lib/resend';
 
+// Message post-connexion (envoyé uniquement si status=connected + temperature=new)
+const LINKEDIN_POST_CONNECTION_MESSAGE = `Bonjour #firstName#,
+
+Merci pour la demande de connexion.
+
+L'idée est de créer des partenariats entre professionnels du digital afin de pouvoir se recommander mutuellement selon les besoins clients.
+
+De notre côté, chez Cognix Systems, nous accompagnons principalement les entreprises sur :
+
+- l'hébergement web et cloud,
+- l'infogérance serveurs,
+- la sécurisation et la supervision d'infrastructures,
+- ainsi que le support technique avancé.
+
+L'objectif n'est pas de concurrencer les agences ou développeurs web, mais au contraire de leur apporter un partenaire technique fiable lorsqu'un client a des besoins d'hébergement, de performance, de migration ou de maintenance.
+
+Et inversement, nous pouvons également orienter certains besoins en développement vers des partenaires de confiance.
+
+Je pense qu'un échange rapide pourrait être intéressant pour voir s'il existe des synergies possibles entre nos activités.
+
+Belle journée à vous également,`;
+
 /**
- * Dérive un mot-clé sectoriel depuis le secteur du lead pour personnaliser le message LinkedIn.
+ * Classe en ban + froid les leads avec connexion envoyée il y a >7 jours sans acceptation.
  */
-function getSectorKeyword(sector: string | null | undefined): string {
-  const s = (sector ?? '').toLowerCase();
-  if (s.includes('e-commerce') || s.includes('ecommerce') || s.includes('commerce')) return 'e-commerce';
-  if (s.includes('web') || s.includes('agence') || s.includes('digital') || s.includes('numérique')) return 'développement web';
-  if (s.includes('hébergement') || s.includes('cloud') || s.includes('infogérance') || s.includes('hosting')) return 'hébergement et infogérance';
-  if (s.includes('logiciel') || s.includes('software') || s.includes('saas') || s.includes('erp')) return 'solutions logicielles';
-  if (s.includes('sécurité') || s.includes('cybersécurité')) return 'cybersécurité';
-  if (s.includes('iot') || s.includes('industrie')) return 'transformation numérique';
-  if (s.includes('conseil') || s.includes('consulting')) return 'conseil digital';
-  return 'digital et technologie';
+function processBanStaleConnections(): number {
+  const db = getDb();
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const stale = db
+    .prepare(
+      `SELECT id FROM leads
+       WHERE linkedin_status = 'connection_sent'
+         AND linkedin_connected = 0
+         AND connection_sent_at IS NOT NULL
+         AND connection_sent_at < :cutoff`
+    )
+    .all({ cutoff: sevenDaysAgo }) as { id: string }[];
+
+  for (const { id } of stale) {
+    db.prepare(
+      `UPDATE leads SET
+         status = 'ban',
+         temperature = 'froid',
+         linkedin_status = 'not_found',
+         updated_at = datetime('now')
+       WHERE id = ?`
+    ).run(id);
+  }
+  return stale.length;
 }
 
 export async function POST(req: NextRequest) {
@@ -54,6 +92,17 @@ export async function POST(req: NextRequest) {
   if (authError) return authError;
 
   const results: Array<{ leadId: string; company: string; channel: string; result: string }> = [];
+
+  // ─── Bannissement automatique des connexions expirées (>7j) ──────────────
+  const bannedCount = processBanStaleConnections();
+  if (bannedCount > 0) {
+    results.push({
+      leadId: 'system',
+      company: 'system',
+      channel: 'system',
+      result: `auto_ban: ${bannedCount} lead(s) sans acceptation après 7j`,
+    });
+  }
 
   // ─── Vérification statut moteur ───────────────────────────────────────────
   const control = getControl();
@@ -79,7 +128,6 @@ export async function POST(req: NextRequest) {
   for (const lead of linkedinLeads.slice(0, 1)) {
     // ── Étape 1 : Recherche de l'URL LinkedIn si absente ──────────────────
     if (!lead.linkedin_url) {
-      // Vérifier qu'on a prénom + nom pour la recherche (sinon marquer not_found et passer)
       const nameParts = (lead.contact_name ?? '').trim().split(/\s+/);
       if (!lead.contact_name || nameParts.length < 2) {
         updateLead(lead.id, { linkedin_status: 'not_found', outreach_sent_at: new Date().toISOString() });
@@ -91,7 +139,7 @@ export async function POST(req: NextRequest) {
       const searchRes = await findLinkedInProfileUrl(
         lead.contact_name ?? lead.company,
         lead.company,
-        lead.id  // CSV ciblé sur ce lead uniquement
+        lead.id
       );
 
       if (searchRes.status === 'found' && searchRes.profileUrl) {
@@ -110,7 +158,6 @@ export async function POST(req: NextRequest) {
         });
         continue;
       } else {
-        // Sortir de la file pour ne pas reboucler indéfiniment sur le même lead
         updateLead(lead.id, {
           linkedin_found: 0,
           linkedin_status: 'not_found',
@@ -129,46 +176,77 @@ export async function POST(req: NextRequest) {
     // ── Étape 2 : Connexion ou message selon l'état du lead ───────────────
     const isConnected = lead.linkedin_connected === 1;
 
-    const res = isConnected
-      ? await sendLinkedInMessage(
-          lead.linkedin_url,
-          (() => {
-          const keyword = getSectorKeyword(lead.sector);
-          return `Bonjour #firstName#, Merci pour la connexion !\n\nNous accompagnons des entreprises en ${keyword} dans leur hébergement et infogérance. Seriez-vous disponible pour un échange rapide de 15 minutes ?\n\nCordialement,\nLoïc Fretay - Cognix Systems`;
-        })()
-        )
-      : await sendLinkedInConnection(
-          lead.linkedin_url,
-          (() => {
-          const keyword = getSectorKeyword(lead.sector);
-          return `Bonjour #firstName#, Je développe un réseau d'experts du digital et recherche des partenaires en ${keyword} afin de créer des synergies d'affaires.\nSeriez-vous ouvert à une mise en relation ?`;
-        })()
-        );
+    if (isConnected) {
+      // N'envoyer le message que si température = new (pas encore contacté post-connexion)
+      if (lead.temperature !== 'new') {
+        results.push({
+          leadId: lead.id,
+          company: lead.company,
+          channel: 'linkedin',
+          result: `skip_message: déjà en température ${lead.temperature}`,
+        });
+        // Sortir de la file pour ne pas reboucler
+        markOutreachSent(lead.id);
+        continue;
+      }
 
-    if (res.status === 'launched') {
-      markOutreachSent(lead.id);
-      incrementDailyActions(1);
-      updateLead(lead.id, {
-        status: isConnected ? 'message_sent' : 'connection_sent',
-        linkedin_status: isConnected ? 'message_sent' : 'connection_sent',
-        ...(isConnected
-          ? { linkedin_message_sent: 1, linkedin_message_sent_at: new Date().toISOString() }
-          : { connection_sent_at: new Date().toISOString() }),
-        last_action_date: new Date().toISOString(),
-      });
-      results.push({
-        leadId: lead.id,
-        company: lead.company,
-        channel: 'linkedin',
-        result: `launched: ${res.containerId}`,
-      });
+      const res = await sendLinkedInMessage(lead.linkedin_url, LINKEDIN_POST_CONNECTION_MESSAGE);
+
+      if (res.status === 'launched') {
+        markOutreachSent(lead.id);
+        incrementDailyActions(1);
+        updateLead(lead.id, {
+          status: 'message_sent',
+          linkedin_status: 'message_sent',
+          temperature: 'tiede',
+          linkedin_message_sent: 1,
+          linkedin_message_sent_at: new Date().toISOString(),
+          last_action_date: new Date().toISOString(),
+        });
+        results.push({
+          leadId: lead.id,
+          company: lead.company,
+          channel: 'linkedin',
+          result: `launched: ${res.containerId}`,
+        });
+      } else {
+        results.push({
+          leadId: lead.id,
+          company: lead.company,
+          channel: 'linkedin',
+          result: `${res.status}: ${res.message}`,
+        });
+      }
     } else {
-      results.push({
-        leadId: lead.id,
-        company: lead.company,
-        channel: 'linkedin',
-        result: `${res.status}: ${res.message}`,
-      });
+      // Envoi demande de connexion
+      const keyword = getSectorKeyword(lead.sector);
+      const connectionNote = `Bonjour #firstName#, Je développe un réseau d'experts du digital et recherche des partenaires en ${keyword} afin de créer des synergies d'affaires.\nSeriez-vous ouvert à une mise en relation ?`;
+
+      const res = await sendLinkedInConnection(lead.linkedin_url, connectionNote);
+
+      if (res.status === 'launched') {
+        markOutreachSent(lead.id);
+        incrementDailyActions(1);
+        updateLead(lead.id, {
+          status: 'connection_sent',
+          linkedin_status: 'connection_sent',
+          connection_sent_at: new Date().toISOString(),
+          last_action_date: new Date().toISOString(),
+        });
+        results.push({
+          leadId: lead.id,
+          company: lead.company,
+          channel: 'linkedin',
+          result: `launched: ${res.containerId}`,
+        });
+      } else {
+        results.push({
+          leadId: lead.id,
+          company: lead.company,
+          channel: 'linkedin',
+          result: `${res.status}: ${res.message}`,
+        });
+      }
     }
   }
 
@@ -234,3 +312,17 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ processed: results.length, results });
 }
 
+/**
+ * Dérive un mot-clé sectoriel depuis le secteur du lead pour personnaliser la note de connexion.
+ */
+function getSectorKeyword(sector: string | null | undefined): string {
+  const s = (sector ?? '').toLowerCase();
+  if (s.includes('e-commerce') || s.includes('ecommerce') || s.includes('commerce')) return 'e-commerce';
+  if (s.includes('web') || s.includes('agence') || s.includes('digital') || s.includes('numérique')) return 'développement web';
+  if (s.includes('hébergement') || s.includes('cloud') || s.includes('infogérance') || s.includes('hosting')) return 'hébergement et infogérance';
+  if (s.includes('logiciel') || s.includes('software') || s.includes('saas') || s.includes('erp')) return 'solutions logicielles';
+  if (s.includes('sécurité') || s.includes('cybersécurité')) return 'cybersécurité';
+  if (s.includes('iot') || s.includes('industrie')) return 'transformation numérique';
+  if (s.includes('conseil') || s.includes('consulting')) return 'conseil digital';
+  return 'digital et technologie';
+}
