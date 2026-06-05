@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import type { Lead } from '@/types/lead';
+import type { Lead, Temperature } from '@/types/lead';
 import TemperatureBadge from './TemperatureBadge';
 
 interface Props {
@@ -12,9 +12,9 @@ interface Props {
 const statusConfig: Record<string, { label: string; className: string }> = {
   new: { label: 'Nouveau', className: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300' },
   linkedin_pending: { label: 'LinkedIn ⏳', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' },
-  connection_sent: { label: 'Connexion', className: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300' },
-  connected: { label: 'Connecté', className: 'bg-teal-100 text-teal-700 dark:bg-teal-900 dark:text-teal-300' },
-  message_sent: { label: 'Message 💬', className: 'bg-violet-100 text-violet-700 dark:bg-violet-900 dark:text-violet-300' },
+  connection_sent: { label: 'Connexion envoyée', className: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300' },
+  connected: { label: 'Connecté ✓', className: 'bg-teal-100 text-teal-700 dark:bg-teal-900 dark:text-teal-300' },
+  message_sent: { label: 'En conversation 💬', className: 'bg-violet-100 text-violet-700 dark:bg-violet-900 dark:text-violet-300' },
   chaud: { label: '🔥 Chaud', className: 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300' },
   rdv_planifie: { label: '📅 RDV', className: 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' },
   converti: { label: '✅ Converti', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300' },
@@ -27,10 +27,17 @@ const linkedinConfig: Record<string, { label: string; className: string }> = {
   not_found: { label: 'Non trouvé', className: 'text-red-500' },
   found: { label: 'Trouvé ✓', className: 'text-blue-500' },
   connection_sent: { label: 'Connexion envoyée', className: 'text-indigo-500' },
-  connected: { label: 'Connecté', className: 'text-teal-500 font-medium' },
+  connected: { label: 'Connecté ✓', className: 'text-teal-500 font-medium' },
   message_sent: { label: 'Message envoyé', className: 'text-violet-500' },
   replied: { label: 'Répondu 🎉', className: 'text-green-600 font-bold' },
 };
+
+// Boutons de classification manuelle (visibles pour les leads en conversation ou tiède)
+const TEMP_ACTIONS: { label: string; temperature: Temperature; status?: string; className: string }[] = [
+  { label: '🔥 Chaud', temperature: 'chaud', status: 'chaud', className: 'bg-orange-100 hover:bg-orange-200 text-orange-700 dark:bg-orange-900 dark:hover:bg-orange-800 dark:text-orange-300' },
+  { label: '❄️ Froid', temperature: 'froid', className: 'bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900 dark:hover:bg-blue-800 dark:text-blue-300' },
+  { label: '📅 RDV proposé', temperature: 'chaud', status: 'rdv_planifie', className: 'bg-green-100 hover:bg-green-200 text-green-700 dark:bg-green-900 dark:hover:bg-green-800 dark:text-green-300' },
+];
 
 function ScoreDots({ score }: { score: number }) {
   return (
@@ -62,6 +69,7 @@ function formatDate(d: string | null) {
 export default function LeadRow({ lead }: Props) {
   const [currentLiStatus, setCurrentLiStatus] = useState(lead.linkedin_status);
   const [currentStatus, setCurrentStatus] = useState(lead.status);
+  const [currentTemp, setCurrentTemp] = useState<Temperature>(lead.temperature as Temperature);
   const status = statusConfig[currentStatus] ?? statusConfig.new;
   const liStatus = linkedinConfig[currentLiStatus] ?? linkedinConfig.pending;
 
@@ -71,6 +79,7 @@ export default function LeadRow({ lead }: Props) {
   );
   const [busy, setBusy] = useState(false);
   const [connectBusy, setConnectBusy] = useState(false);
+  const [tempBusy, setTempBusy] = useState(false);
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [manualUrl, setManualUrl] = useState('');
   const [urlBusy, setUrlBusy] = useState(false);
@@ -121,7 +130,6 @@ export default function LeadRow({ lead }: Props) {
           linkedin_url: url,
           linkedin_found: 1,
           linkedin_status: 'found',
-          // Remettre en file d'attente (réinitialiser outreach_sent_at)
           outreach_sent_at: null,
         }),
       });
@@ -129,7 +137,6 @@ export default function LeadRow({ lead }: Props) {
         setCurrentLiStatus('found');
         setShowUrlInput(false);
         setManualUrl('');
-        // Forcer rechargement de la ligne pour réfléter le lien
         window.location.reload();
       }
     } finally {
@@ -140,7 +147,6 @@ export default function LeadRow({ lead }: Props) {
   async function handleMarkConnected() {
     setConnectBusy(true);
     try {
-      // 1. Mise à jour du statut connexion
       const patchRes = await fetch(`/api/leads/${lead.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -154,20 +160,41 @@ export default function LeadRow({ lead }: Props) {
 
       if (!patchRes.ok) return;
 
-      // 2. Re-queue automatique pour le message
+      // Re-queue automatique pour le message
       await fetch('/api/outreach', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ leadId: lead.id, channel: 'linkedin' }),
       });
 
-      // Mise à jour locale immédiate (pas de reload)
       setCurrentLiStatus('connected');
       setCurrentStatus('connected');
     } finally {
       setConnectBusy(false);
     }
   }
+
+  async function handleSetTemperature(temperature: Temperature, status?: string) {
+    setTempBusy(true);
+    try {
+      const body: Record<string, string> = { temperature };
+      if (status) body.status = status;
+      const res = await fetch(`/api/leads/${lead.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        setCurrentTemp(temperature);
+        if (status) setCurrentStatus(status);
+      }
+    } finally {
+      setTempBusy(false);
+    }
+  }
+
+  // Afficher les boutons de classification manuelle si le lead est en conversation (tiède) ou message_sent
+  const showTempActions = currentTemp === 'tiede' || currentStatus === 'message_sent';
 
   return (
     <tr className="hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors group">
@@ -207,9 +234,26 @@ export default function LeadRow({ lead }: Props) {
         {lead.current_host ?? '—'}
       </td>
 
-      {/* Température */}
+      {/* Température + boutons de classification manuelle */}
       <td className="px-4 py-3">
-        <TemperatureBadge temperature={lead.temperature} />
+        <div className="flex flex-col gap-1">
+          <TemperatureBadge temperature={currentTemp} />
+          {showTempActions && (
+            <div className="flex flex-wrap gap-1 mt-1">
+              {TEMP_ACTIONS.map((action) => (
+                <button
+                  key={action.label}
+                  onClick={() => handleSetTemperature(action.temperature, action.status)}
+                  disabled={tempBusy}
+                  title={`Classer comme : ${action.label}`}
+                  className={`px-2 py-0.5 text-xs rounded-lg font-medium transition disabled:opacity-40 ${action.className}`}
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </td>
 
       {/* LinkedIn — avec bouton 🤝 si connexion en attente d'acceptation */}
@@ -269,7 +313,7 @@ export default function LeadRow({ lead }: Props) {
             </>
           )}
 
-          {/* Bouton "Marquer connecté" — visible uniquement en connection_sent */}
+          {/* Bouton "Connexion acceptée" — visible uniquement en connection_sent */}
           {currentLiStatus === 'connection_sent' && (
             <button
               onClick={handleMarkConnected}
@@ -277,7 +321,7 @@ export default function LeadRow({ lead }: Props) {
               title="Connexion acceptée sur LinkedIn ? Cliquer pour envoyer le message"
               className="inline-flex items-center gap-1 px-2 py-0.5 bg-teal-100 hover:bg-teal-200 dark:bg-teal-900 dark:hover:bg-teal-800 text-teal-700 dark:text-teal-300 text-xs font-medium rounded-lg transition disabled:opacity-40 w-fit"
             >
-              {connectBusy ? '⏳' : ''} Connecté
+              {connectBusy ? '⏳' : '🤝'} Connexion acceptée
             </button>
           )}
         </div>
@@ -344,4 +388,3 @@ export default function LeadRow({ lead }: Props) {
     </tr>
   );
 }
-
