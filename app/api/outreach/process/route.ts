@@ -237,7 +237,7 @@ export async function POST(req: NextRequest) {
           leadId: lead.id,
           company: lead.company,
           channel: 'linkedin',
-          result: `launched: ${res.containerId}`,
+          result: `connection_launched_unverified: ${res.containerId}`,
         });
       } else {
         results.push({
