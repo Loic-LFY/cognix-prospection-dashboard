@@ -29,9 +29,6 @@ export function middleware(req: NextRequest) {
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }
-  // Statut moteur public (Header le poll avant auth)
-  if (pathname === '/api/control/status') return NextResponse.next();
-
   // CSV export pour PhantomBuster — auth via token dans URL (pas header)
   if (pathname === '/api/leads/pending-csv' || pathname.endsWith('/search-csv')) return NextResponse.next();
 

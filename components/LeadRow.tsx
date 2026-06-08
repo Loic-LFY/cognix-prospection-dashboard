@@ -103,13 +103,17 @@ export default function LeadRow({ lead }: Props) {
   }
 
   async function toggleChannel() {
+    const prev = channel;
     const next: 'linkedin' | 'email' = channel === 'linkedin' ? 'email' : 'linkedin';
-    setChannel(next);
-    await fetch(`/api/leads/${lead.id}`, {
+    setChannel(next); // optimiste
+    const res = await fetch(`/api/leads/${lead.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ outreach_channel: next }),
     });
+    if (!res.ok) {
+      setChannel(prev); // rollback si erreur
+    }
   }
 
   async function handleSaveLinkedInUrl() {
@@ -157,15 +161,25 @@ export default function LeadRow({ lead }: Props) {
 
       if (!patchRes.ok) return;
 
-      // Re-queue automatique pour le message
-      await fetch('/api/outreach', {
+      // Re-queue automatique pour le message post-connexion
+      const queueRes = await fetch('/api/outreach', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ leadId: lead.id, channel: 'linkedin' }),
       });
 
+      if (!queueRes.ok) {
+        const err = await queueRes.json().catch(() => ({}));
+        alert(`Connexion marquée mais re-queue échoué : ${err.error ?? 'erreur inconnue'}. Le message automatique ne partira pas.`);
+        return;
+      }
+
       setCurrentLiStatus('connected');
       setCurrentStatus('connected');
+      // Rafraîchir les composants server (KPIs, stats)
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('leadConnected', { detail: lead.id }));
+      }
     } finally {
       setConnectBusy(false);
     }
