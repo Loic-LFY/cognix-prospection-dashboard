@@ -313,15 +313,15 @@ export default function LeadRow({ lead }: Props) {
             </>
           )}
 
-          {/* Bouton "Connexion acceptée" — visible uniquement en connection_sent */}
+          {/* Bouton action manuelle — visible uniquement si connexion en attente d'acceptation */}
           {currentLiStatus === 'connection_sent' && (
             <button
               onClick={handleMarkConnected}
               disabled={connectBusy}
-              title="Connexion acceptée sur LinkedIn ? Cliquer pour envoyer le message"
-              className="inline-flex items-center gap-1 px-2 py-0.5 bg-teal-100 hover:bg-teal-200 dark:bg-teal-900 dark:hover:bg-teal-800 text-teal-700 dark:text-teal-300 text-xs font-medium rounded-lg transition disabled:opacity-40 w-fit"
+              title="Cliquer ici uniquement si la connexion a été acceptée sur LinkedIn"
+              className="inline-flex items-center gap-1 px-2 py-0.5 border border-teal-400 hover:bg-teal-100 dark:hover:bg-teal-900 text-teal-600 dark:text-teal-400 text-xs font-medium rounded-lg transition disabled:opacity-40 w-fit cursor-pointer"
             >
-              {connectBusy ? '⏳' : '🤝'} Connexion acceptée
+              {connectBusy ? '⏳' : '✓'} Marquer connecté
             </button>
           )}
         </div>
