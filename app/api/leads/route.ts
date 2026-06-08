@@ -41,6 +41,14 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
+    // Validation : company obligatoire
+    if (!body.company || !String(body.company).trim()) {
+      return NextResponse.json(
+        { error: 'Le champ company est obligatoire' },
+        { status: 400 }
+      );
+    }
+
     // Déduplication : skip silencieux si l'email existe déjà en base
     if (body.email) {
       const existing = getLeadByEmail(body.email);
