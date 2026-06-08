@@ -1,8 +1,12 @@
 export const dynamic = 'force-dynamic';
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { syncControlMode } from "@/lib/db";
+import { checkApiKey } from "@/lib/auth";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const authError = await checkApiKey(req);
+  if (authError) return authError;
+
   const control = syncControlMode();
   let pauseDuration: string | null = null;
 

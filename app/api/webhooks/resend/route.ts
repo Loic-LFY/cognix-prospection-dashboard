@@ -18,7 +18,7 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { markEmailOpened } from '@/lib/db';
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 
 interface ResendWebhookEvent {
   type: string;
@@ -31,24 +31,67 @@ interface ResendWebhookEvent {
   };
 }
 
-function verifySignature(rawBody: string, signatureHeader: string | null): boolean {
+/**
+ * Vérifie la signature Svix selon la spec officielle :
+ * https://docs.svix.com/receiving/verifying-payloads/how
+ *
+ * Signature = HMAC-SHA256(secret_bytes, "${svix-id}.${svix-timestamp}.${rawBody}")
+ * Le secret est encodé en base64 (format "whsec_<base64>")
+ * svix-signature contient une ou plusieurs sigs : "v1,<base64> v1,<base64>"
+ */
+function verifySignature(
+  rawBody: string,
+  svixId: string | null,
+  svixTimestamp: string | null,
+  svixSignature: string | null
+): boolean {
   const secret = process.env.RESEND_WEBHOOK_SECRET;
   if (!secret) {
-    // Secret non configuré → on accepte sans vérification (dev/préprod uniquement)
     console.warn('[resend-webhook] RESEND_WEBHOOK_SECRET absent — signature non vérifiée');
     return true;
   }
-  if (!signatureHeader) return false;
+  if (!svixId || !svixTimestamp || !svixSignature) return false;
 
-  const expected = createHmac('sha256', secret).update(rawBody).digest('hex');
-  return signatureHeader === expected;
+  // Rejeter les timestamps trop anciens (>5 min) pour éviter le replay
+  const ts = parseInt(svixTimestamp, 10);
+  if (isNaN(ts) || Math.abs(Date.now() / 1000 - ts) > 300) {
+    console.warn('[resend-webhook] Timestamp Svix trop ancien ou invalide');
+    return false;
+  }
+
+  // Décoder le secret (format "whsec_<base64>" ou base64 brut)
+  const secretBase64 = secret.startsWith('whsec_') ? secret.slice(6) : secret;
+  const secretBytes = Buffer.from(secretBase64, 'base64');
+
+  // Payload signé
+  const signedContent = `${svixId}.${svixTimestamp}.${rawBody}`;
+  const expected = createHmac('sha256', secretBytes).update(signedContent).digest('base64');
+
+  // Comparer avec chaque signature fournie (format "v1,<base64> v1,<base64>")
+  const signatures = svixSignature.split(' ');
+  for (const sig of signatures) {
+    const [version, b64] = sig.split(',');
+    if (version !== 'v1' || !b64) continue;
+    try {
+      const expectedBuf = Buffer.from(expected, 'base64');
+      const actualBuf = Buffer.from(b64, 'base64');
+      if (expectedBuf.length === actualBuf.length && timingSafeEqual(expectedBuf, actualBuf)) {
+        return true;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return false;
 }
 
 export async function POST(req: NextRequest) {
   const rawBody = await req.text();
-  const signature = req.headers.get('svix-signature') ?? req.headers.get('x-resend-signature');
+  const svixId = req.headers.get('svix-id');
+  const svixTimestamp = req.headers.get('svix-timestamp');
+  const svixSignature = req.headers.get('svix-signature');
 
-  if (!verifySignature(rawBody, signature)) {
+  if (!verifySignature(rawBody, svixId, svixTimestamp, svixSignature)) {
     return NextResponse.json({ error: 'Signature invalide' }, { status: 401 });
   }
 

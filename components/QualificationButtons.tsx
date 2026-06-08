@@ -31,17 +31,16 @@ export default function QualificationButtons({ leadId, currentStatus }: Props) {
   const [status, setStatus] = useState<QualificationStatus>(currentStatus);
   const [error, setError] = useState<string | null>(null);
 
-  const apiKey = process.env.NEXT_PUBLIC_DASHBOARD_API_KEY || '';
-
   async function handleAction(action: 'approve' | 'reject' | 'delete') {
     setError(null);
     try {
+      // Auth via cookie de session uniquement (pas d'API key dans le bundle JS client)
       const res = await fetch(`/api/leads/${leadId}/qualify`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': apiKey,
         },
+        credentials: 'include',
         body: JSON.stringify({ action }),
       });
 

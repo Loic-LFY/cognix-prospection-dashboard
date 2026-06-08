@@ -25,6 +25,7 @@ import {
   updateLead,
   getControl,
   incrementDailyActions,
+  resetDailyActions,
   getDb,
 } from '@/lib/db';
 import {
@@ -79,7 +80,8 @@ function processBanStaleConnections(): number {
       `UPDATE leads SET
          status = 'ban',
          temperature = 'froid',
-         linkedin_status = 'not_found',
+         linkedin_status = 'connection_expired',
+         outreach_sent_at = datetime('now'),
          updated_at = datetime('now')
        WHERE id = ?`
     ).run(id);
@@ -92,6 +94,13 @@ export async function POST(req: NextRequest) {
   if (authError) return authError;
 
   const results: Array<{ leadId: string; company: string; channel: string; result: string }> = [];
+
+  // ─── Reset daily_actions si nouveau jour ────────────────────────────────
+  const control0 = getControl();
+  const lastRun = control0.updated_at ? new Date(control0.updated_at).toDateString() : null;
+  if (lastRun && lastRun !== new Date().toDateString()) {
+    resetDailyActions();
+  }
 
   // ─── Bannissement automatique des connexions expirées (>7j) ──────────────
   const bannedCount = processBanStaleConnections();

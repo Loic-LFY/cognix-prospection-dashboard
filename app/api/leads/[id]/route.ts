@@ -41,6 +41,14 @@ export async function PATCH(
   const { id } = await params;
   try {
     const body = await req.json();
+    // qualification_status ne doit pas être modifié via PATCH direct
+    // Utiliser POST /api/leads/[id]/qualify pour ça
+    if ('qualification_status' in body) {
+      return NextResponse.json(
+        { error: 'qualification_status ne peut pas être modifié via PATCH. Utiliser /api/leads/[id]/qualify' },
+        { status: 400 }
+      );
+    }
     const lead = updateLead(id, body);
     if (!lead) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     return NextResponse.json(lead);

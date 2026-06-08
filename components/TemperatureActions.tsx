@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import type { Temperature, LeadStatus } from '@/types/lead';
 
 interface Props {
@@ -33,6 +34,7 @@ const TEMP_ACTIONS: { icon: string; label: string; temperature: Temperature; sta
 ];
 
 export default function TemperatureActions({ leadId, currentTemperature, currentStatus }: Props) {
+  const router = useRouter();
   const [temp, setTemp] = useState<Temperature>(currentTemperature);
   const [status, setStatus] = useState<LeadStatus>(currentStatus);
   const [busy, setBusy] = useState(false);
@@ -55,6 +57,7 @@ export default function TemperatureActions({ leadId, currentTemperature, current
         setTemp(temperature);
         if (newStatus) setStatus(newStatus);
         setDone(true);
+        router.refresh();
       }
     } finally {
       setBusy(false);

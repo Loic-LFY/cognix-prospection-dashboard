@@ -474,7 +474,10 @@ export function queueLeadForOutreach(id: string, channel: OutreachChannel): Lead
   getDb()
     .prepare(
       `UPDATE leads
-       SET outreach_channel = :channel, outreach_queued_at = datetime('now'), updated_at = datetime('now')
+       SET outreach_channel = :channel,
+           outreach_queued_at = datetime('now'),
+           outreach_sent_at = NULL,
+           updated_at = datetime('now')
        WHERE id = :id AND qualification_status = 'approved'`
     )
     .run({ id, channel });

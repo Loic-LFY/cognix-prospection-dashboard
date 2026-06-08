@@ -53,7 +53,13 @@ export async function validateSessionToken(token: string): Promise<boolean> {
   try {
     const key = await getKey(getSecret());
     const sigBytes = hexToBytes(sigHex);
-    return await crypto.subtle.verify('HMAC', key, sigBytes.buffer as ArrayBuffer, encoder.encode(payload));
+    const valid = await crypto.subtle.verify('HMAC', key, sigBytes.buffer as ArrayBuffer, encoder.encode(payload));
+    if (!valid) return false;
+    // Vérifier l'expiration côté serveur (SESSION_MAX_AGE)
+    const timestamp = parseInt(payload.split('.')[0], 10);
+    if (isNaN(timestamp)) return false;
+    const ageSeconds = (Date.now() - timestamp) / 1000;
+    return ageSeconds <= SESSION_MAX_AGE;
   } catch {
     return false;
   }

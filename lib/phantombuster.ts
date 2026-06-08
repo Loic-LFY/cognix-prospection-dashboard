@@ -68,13 +68,24 @@ export function nextOutreachWindow(): Date {
   const year = get('year');
 
   if (!isWithinOutreachWindow()) {
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowParts = parisFormatter.formatToParts(tomorrow);
+    // Calculer le prochain 09h00 Paris sans offset hardcodé
+    // On avance heure par heure jusqu'à être dans la fenêtre
+    const candidate = new Date(now);
+    candidate.setDate(candidate.getDate() + 1);
+    // Construire la date Paris 09:00 via UTC : trouver l'offset réel
+    const tomorrowParts = parisFormatter.formatToParts(candidate);
     const tDay = tomorrowParts.find((p) => p.type === 'day')?.value ?? day;
     const tMonth = tomorrowParts.find((p) => p.type === 'month')?.value ?? month;
     const tYear = tomorrowParts.find((p) => p.type === 'year')?.value ?? year;
-    return new Date(`${tYear}-${tMonth}-${tDay}T09:00:00+02:00`);
+    // Trouver l'offset Paris réel pour ce jour (gère heure d'été/hiver)
+    const probe = new Date(`${tYear}-${tMonth}-${tDay}T09:00:00`);
+    const parisHour = parseInt(
+      new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: 'numeric', hour12: false }).format(probe),
+      10
+    );
+    // Ajuster si l'offset local ne correspond pas à Paris
+    probe.setHours(probe.getHours() + (9 - parisHour));
+    return probe;
   }
   return now;
 }
