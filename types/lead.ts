@@ -58,14 +58,11 @@ export type QualificationStatus = 'pending_review' | 'approved' | 'rejected';
 
 export type LeadStatus =
   | 'new'
-  | 'linkedin_pending'
   | 'connection_sent'
   | 'connected'
   | 'message_sent'
   | 'chaud'
   | 'rdv_planifie'
-  | 'converti'
-  | 'perdu'
   | 'ban';
 
 export type Temperature = 'new' | 'froid' | 'tiede' | 'chaud';
@@ -77,7 +74,7 @@ export type LinkedInStatus =
   | 'connection_sent'
   | 'connected'
   | 'message_sent'
-  | 'replied';
+  | 'connection_expired';
 
 export interface Control {
   id: number;

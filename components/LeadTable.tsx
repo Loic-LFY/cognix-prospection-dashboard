@@ -15,14 +15,11 @@ const TEMPERATURES: { value: string; label: string }[] = [
 const STATUSES: { value: string; label: string }[] = [
   { value: '', label: 'Tous statuts' },
   { value: 'new', label: 'Nouveau' },
-  { value: 'linkedin_pending', label: 'LinkedIn ⏳' },
   { value: 'connection_sent', label: 'Connexion envoyée' },
   { value: 'connected', label: 'Connecté' },
   { value: 'message_sent', label: 'Message envoyé' },
   { value: 'chaud', label: '🔥 Chaud' },
   { value: 'rdv_planifie', label: '📅 RDV planifié' },
-  { value: 'converti', label: '✅ Converti' },
-  { value: 'perdu', label: '❌ Perdu' },
   { value: 'ban', label: '🚫 Ban' },
 ];
 
@@ -34,7 +31,7 @@ const LINKEDIN_STATUSES: { value: string; label: string }[] = [
   { value: 'connection_sent', label: 'Connexion envoyée' },
   { value: 'connected', label: 'Connecté' },
   { value: 'message_sent', label: 'Message envoyé' },
-  { value: 'replied', label: 'Répondu' },
+  { value: 'connection_expired', label: '⏰ Expirée (>7j)' },
 ];
 
 const SORT_OPTIONS = [

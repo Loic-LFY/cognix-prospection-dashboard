@@ -38,14 +38,11 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 
 const statusLabels: Record<string, string> = {
   new: 'Nouveau',
-  linkedin_pending: 'LinkedIn en attente',
   connection_sent: 'Connexion envoyée',
   connected: 'Connecté',
   message_sent: 'Message envoyé',
   chaud: '🔥 Chaud',
   rdv_planifie: '📅 RDV planifié',
-  converti: '✅ Converti',
-  perdu: '❌ Perdu',
   ban: '🚫 Ban',
 };
 
