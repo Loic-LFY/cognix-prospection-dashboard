@@ -112,6 +112,30 @@ export default function LeadTable() {
     return <span>{sortOrder === 'asc' ? '↑' : '↓'}</span>;
   };
 
+  const PaginationControls = () => (
+    <>
+      <span className="text-gray-500 dark:text-gray-400">
+        Page {page} / {totalPages}
+      </span>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setPage((p) => Math.max(1, p - 1))}
+          disabled={page === 1}
+          className="px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 transition"
+        >
+          ← Préc.
+        </button>
+        <button
+          onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+          disabled={page === totalPages}
+          className="px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 transition"
+        >
+          Suiv. →
+        </button>
+      </div>
+    </>
+  );
+
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
       {/* Filters bar */}
@@ -166,6 +190,13 @@ export default function LeadTable() {
           </button>
         </div>
       </div>
+
+      {/* Pagination top */}
+      {totalPages > 1 && (
+        <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between text-sm">
+          <PaginationControls />
+        </div>
+      )}
 
       {/* Table */}
       <div className="overflow-x-auto">
@@ -228,28 +259,10 @@ export default function LeadTable() {
         </table>
       </div>
 
-      {/* Pagination */}
+      {/* Pagination bottom */}
       {totalPages > 1 && (
         <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between text-sm">
-          <span className="text-gray-500 dark:text-gray-400">
-            Page {page} / {totalPages}
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className="px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 transition"
-            >
-              ← Préc.
-            </button>
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
-              className="px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 transition"
-            >
-              Suiv. →
-            </button>
-          </div>
+          <PaginationControls />
         </div>
       )}
     </div>
