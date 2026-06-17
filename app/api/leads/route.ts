@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { checkApiKey } from '@/lib/auth';
-import { getLeads, createLead, getLeadByEmail } from '@/lib/db';
+import { getLeads, createLead, getLeadByEmail, getLeadByCompany } from '@/lib/db';
 import type { LeadFilters, Temperature, LeadStatus, LinkedInStatus } from '@/types/lead';
 
 export async function GET(req: NextRequest) {
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Déduplication : skip silencieux si l'email existe déjà en base
+    // Déduplication 1 : par email
     if (body.email) {
       const existing = getLeadByEmail(body.email);
       if (existing) {
@@ -58,6 +58,15 @@ export async function POST(req: NextRequest) {
           { status: 200 }
         );
       }
+    }
+
+    // Déduplication 2 : par nom de société (insensible à la casse)
+    const existingByCompany = getLeadByCompany(body.company);
+    if (existingByCompany) {
+      return NextResponse.json(
+        { skipped: true, reason: 'duplicate_company', existing_id: existingByCompany.id },
+        { status: 200 }
+      );
     }
 
     const lead = createLead(body);
