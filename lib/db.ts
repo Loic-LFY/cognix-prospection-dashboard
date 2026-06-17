@@ -205,6 +205,12 @@ export function getLeadByEmail(email: string): Lead | undefined {
     | undefined;
 }
 
+export function getLeadByCompany(company: string): Lead | undefined {
+  return getDb()
+    .prepare("SELECT * FROM leads WHERE LOWER(TRIM(company)) = LOWER(TRIM(?)) LIMIT 1")
+    .get(company) as Lead | undefined;
+}
+
 export function getLeadById(id: string): Lead | undefined {
   return getDb().prepare('SELECT * FROM leads WHERE id = ?').get(id) as
     | Lead
